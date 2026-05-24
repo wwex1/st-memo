@@ -124,7 +124,15 @@ jQuery(async () => {
         closeMemoModal();
     });
 
-    memoPopupEl.querySelector(".memo-close").addEventListener("click", closeMemoModal);
+    const closeBtn = memoPopupEl.querySelector(".memo-close");
+    const closeBtnHandler = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        closeMemoModal();
+    };
+    closeBtn.addEventListener("click", closeBtnHandler);
+    closeBtn.addEventListener("touchend", closeBtnHandler);
+
     memoPopupEl.querySelector("#memo-add-title").addEventListener("click", addMemoGroup);
 
     // ESC
