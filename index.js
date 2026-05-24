@@ -1,14 +1,10 @@
-/**
- * Memo Box for SillyTavern
- * 제목별 메모 저장 / 수정 / 복사 / 삭제
- * 버튼 위치: #extensionsMenu
- * 창 방식: 키워드 창처럼 중앙 팝업
- */
+/* Memo Box for SillyTavern */
 
 const MODULE_NAME = "st-memo-box";
 
 const MEMO_DEFAULTS = {
     memoGroups: [],
+    collapsedGroups: {},
 };
 
 jQuery(async () => {
@@ -35,6 +31,10 @@ jQuery(async () => {
 
         if (!Array.isArray(s.memoGroups)) {
             s.memoGroups = [];
+        }
+
+        if (!s.collapsedGroups || typeof s.collapsedGroups !== "object") {
+            s.collapsedGroups = {};
         }
 
         return s;
@@ -165,6 +165,7 @@ jQuery(async () => {
         if (memoModalOpen) return;
 
         memoModalOpen = true;
+
         ensureMemoDOM();
         renderMemoGroups();
 
@@ -180,7 +181,9 @@ jQuery(async () => {
 
         memoModalOpen = false;
 
-        if (memoBgEl) memoBgEl.classList.remove("memo-show");
+        if (memoBgEl) {
+            memoBgEl.classList.remove("memo-show");
+        }
 
         if (memoPopupEl) {
             memoPopupEl.classList.remove("memo-show");
@@ -205,20 +208,65 @@ jQuery(async () => {
         settings.memoGroups.forEach((group) => {
             if (!Array.isArray(group.items)) group.items = [];
 
+            const isCollapsed = !!settings.collapsedGroups[group.id];
+
             const groupEl = document.createElement("div");
             groupEl.className = "memo-group";
             groupEl.dataset.groupId = group.id;
 
             groupEl.innerHTML = `
-                <div class="memo-group-head">
+                <div class="memo-group-titlebar">
+                    <button class="memo-collapse-btn" type="button" title="접기/펼치기">${isCollapsed ? "▶" : "▼"}</button>
                     <input class="text_pole memo-title-input" placeholder="제목" value="${escapeHtml(group.title || "")}">
-                    <div class="memo-small-btn memo-add-item">내용 추가</div>
-                    <div class="memo-small-btn memo-delete-title">제목 삭제</div>
                 </div>
-                <div class="memo-items"></div>
+
+                <div class="memo-group-content" style="${isCollapsed ? "display:none;" : ""}">
+                    <div class="memo-group-actions">
+                        <div class="memo-small-btn memo-add-item">내용 추가</div>
+                        <div class="memo-small-btn memo-delete-title">제목 삭제</div>
+                    </div>
+
+                    <div class="memo-items"></div>
+                </div>
             `;
 
+            const titlebar = groupEl.querySelector(".memo-group-titlebar");
+            const collapseBtn = groupEl.querySelector(".memo-collapse-btn");
             const titleInput = groupEl.querySelector(".memo-title-input");
+            const contentEl = groupEl.querySelector(".memo-group-content");
+
+            function toggleGroup() {
+                const nextCollapsed = !settings.collapsedGroups[group.id];
+
+                if (nextCollapsed) {
+                    settings.collapsedGroups[group.id] = true;
+                    collapseBtn.textContent = "▶";
+                    contentEl.style.display = "none";
+                } else {
+                    delete settings.collapsedGroups[group.id];
+                    collapseBtn.textContent = "▼";
+                    contentEl.style.display = "";
+                }
+
+                persist();
+                memoPosPopup();
+            }
+
+            collapseBtn.addEventListener("click", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleGroup();
+            });
+
+            titlebar.addEventListener("click", (e) => {
+                if (e.target === titleInput) return;
+                toggleGroup();
+            });
+
+            titleInput.addEventListener("click", (e) => {
+                e.stopPropagation();
+            });
+
             titleInput.addEventListener("input", () => {
                 group.title = titleInput.value;
                 persist();
@@ -230,6 +278,8 @@ jQuery(async () => {
                     content: "",
                 });
 
+                delete settings.collapsedGroups[group.id];
+
                 persist();
                 renderMemoGroups();
             });
@@ -238,6 +288,7 @@ jQuery(async () => {
                 if (!confirm("이 제목과 안에 있는 내용을 전부 삭제할까요?")) return;
 
                 settings.memoGroups = settings.memoGroups.filter(g => g.id !== group.id);
+                delete settings.collapsedGroups[group.id];
 
                 persist();
                 renderMemoGroups();
@@ -255,6 +306,7 @@ jQuery(async () => {
 
                     itemEl.innerHTML = `
                         <textarea class="text_pole memo-content" rows="4" placeholder="내용">${escapeHtml(item.content || "")}</textarea>
+
                         <div class="memo-actions">
                             <div class="memo-small-btn memo-copy-item">📋 복사</div>
                             <div class="memo-small-btn memo-delete-item">🗑️ 삭제</div>
@@ -299,17 +351,23 @@ jQuery(async () => {
 
         if (!title || !title.trim()) return;
 
+        const id = uid("group");
+
         settings.memoGroups.push({
-            id: uid("group"),
+            id,
             title: title.trim(),
             items: [],
         });
+
+        delete settings.collapsedGroups[id];
 
         persist();
         renderMemoGroups();
     }
 
     // ─── 확장 메뉴 버튼 ───
+
+    document.getElementById("memo_menu_btn")?.remove();
 
     const memoMenuBtn = document.createElement("div");
     memoMenuBtn.id = "memo_menu_btn";
@@ -331,6 +389,7 @@ jQuery(async () => {
             const m = document.getElementById("extensionsMenu");
 
             if (m) {
+                document.getElementById("memo_menu_btn")?.remove();
                 m.appendChild(memoMenuBtn);
                 o.disconnect();
             }
