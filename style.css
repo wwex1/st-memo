@@ -5,25 +5,18 @@
 
     display: none;
 
-    align-items: center;
-    justify-content: center;
-
-    padding: 10px;
-
     background: rgba(0, 0, 0, 0.45);
-
-    box-sizing: border-box;
 
     pointer-events: auto !important;
     touch-action: manipulation;
 }
 
 #memo-bg.memo-show {
-    display: flex;
+    display: block;
 }
 
 #memo-popup {
-    position: relative;
+    position: fixed;
     z-index: 99999;
 
     display: none;
@@ -44,10 +37,6 @@
 
     pointer-events: auto !important;
     touch-action: manipulation;
-}
-
-#memo-popup.memo-show {
-    display: flex;
 }
 
 .memo-header {
@@ -291,10 +280,6 @@
 }
 
 @media (max-width: 600px) {
-    #memo-bg {
-        padding: 6px;
-    }
-
     #memo-popup {
         width: calc(100vw - 12px);
         max-height: calc(100dvh - 12px);
