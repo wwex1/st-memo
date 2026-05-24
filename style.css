@@ -2,8 +2,13 @@
     position: fixed;
     inset: 0;
     z-index: 99998;
+
     display: none;
+
     background: rgba(0, 0, 0, 0.45);
+
+    pointer-events: auto !important;
+    touch-action: manipulation;
 }
 
 #memo-bg.memo-show {
@@ -20,14 +25,18 @@
     width: min(520px, calc(100vw - 20px));
     max-height: min(760px, calc(100dvh - 20px));
 
-    border: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.16));
+    border: 1px solid var(--SmartThemeBorderColor, rgba(0, 0, 0, 0.16));
     border-radius: 14px;
 
-    background: var(--SmartThemeBlurTintColor, rgba(255,255,255,0.96));
+    background: var(--SmartThemeBlurTintColor, rgba(255, 255, 255, 0.96));
     color: var(--SmartThemeBodyColor, #222);
 
-    box-shadow: 0 10px 38px rgba(0,0,0,0.35);
+    box-shadow: 0 10px 38px rgba(0, 0, 0, 0.35);
+
     overflow: hidden;
+
+    pointer-events: auto !important;
+    touch-action: manipulation;
 }
 
 .memo-header {
@@ -36,7 +45,8 @@
     justify-content: space-between;
 
     padding: 10px 12px;
-    border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.12));
+
+    border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(0, 0, 0, 0.12));
 
     flex-shrink: 0;
 }
@@ -48,31 +58,38 @@
 
 .memo-close {
     cursor: pointer;
+
     opacity: 0.75;
+
     padding: 6px 10px;
     margin: -4px;
+
     font-size: 16px;
     line-height: 1;
+
     position: relative;
     z-index: 2;
+
     user-select: none;
+    -webkit-user-select: none;
+
     pointer-events: auto !important;
     touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 
-.memo-close:hover { opacity: 1; }
-
-#memo-popup {
-    pointer-events: auto !important;
-}
-
-#memo-bg {
-    pointer-events: auto !important;
+.memo-close:hover {
+    opacity: 1;
 }
 
 .memo-body {
     padding: 10px;
+
     overflow-y: auto;
+    overscroll-behavior: contain;
+
+    min-height: 0;
+    flex: 1 1 auto;
 }
 
 #memo-groups {
@@ -82,10 +99,12 @@
 }
 
 .memo-group {
-    border: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.14));
+    border: 1px solid var(--SmartThemeBorderColor, rgba(0, 0, 0, 0.14));
     border-radius: 10px;
+
     padding: 10px;
-    background: var(--SmartThemeBlurTintColor, rgba(0,0,0,0.06));
+
+    background: var(--SmartThemeBlurTintColor, rgba(0, 0, 0, 0.06));
 }
 
 .memo-group-titlebar {
@@ -97,26 +116,38 @@
 
 .memo-collapse-btn {
     cursor: pointer;
+
     width: 34px;
     min-width: 34px;
     height: 34px;
-    border: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.16));
+
+    border: 1px solid var(--SmartThemeBorderColor, rgba(0, 0, 0, 0.16));
     border-radius: 8px;
-    background: var(--SmartThemeBlurTintColor, rgba(255,255,255,0.08));
+
+    background: var(--SmartThemeBlurTintColor, rgba(255, 255, 255, 0.08));
     color: var(--SmartThemeBodyColor, #222);
+
     font-size: 13px;
+
+    user-select: none;
+    -webkit-user-select: none;
+
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .memo-title-input {
     width: 100%;
-    font-weight: 700;
     box-sizing: border-box;
+
+    font-weight: 700;
 }
 
 .memo-group-content {
     display: flex;
     flex-direction: column;
     gap: 8px;
+
     margin-top: 8px;
 }
 
@@ -133,21 +164,24 @@
 }
 
 .memo-item {
-    padding: 8px;
-    border-radius: 8px;
-    background: var(--SmartThemeBlurTintColor, rgba(255,255,255,0.04));
-    border: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.10));
-
     display: flex;
     flex-direction: column;
     gap: 6px;
+
+    padding: 8px;
+
+    border: 1px solid var(--SmartThemeBorderColor, rgba(0, 0, 0, 0.10));
+    border-radius: 8px;
+
+    background: var(--SmartThemeBlurTintColor, rgba(255, 255, 255, 0.04));
 }
 
 .memo-item-title-input {
     width: 100%;
+    box-sizing: border-box;
+
     font-weight: 700;
     font-size: 13px;
-    box-sizing: border-box;
 }
 
 .memo-add-item-title-row {
@@ -156,9 +190,17 @@
 
 .memo-add-item-title-link {
     cursor: pointer;
+
     font-size: 12px;
     opacity: 0.65;
+
     padding: 2px 4px;
+
+    user-select: none;
+    -webkit-user-select: none;
+
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .memo-add-item-title-link:hover {
@@ -169,14 +211,17 @@
 .memo-content {
     width: 100%;
     min-height: 38px;
+
     resize: none;
     overflow: hidden;
+
     box-sizing: border-box;
+
     line-height: 1.45;
 
-    background: var(--SmartThemeBlurTintColor, rgba(255,255,255,0.06)) !important;
+    background: var(--SmartThemeBlurTintColor, rgba(255, 255, 255, 0.06)) !important;
     color: var(--SmartThemeBodyColor, inherit) !important;
-    border: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.14)) !important;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(0, 0, 0, 0.14)) !important;
 }
 
 .memo-actions {
@@ -187,30 +232,38 @@
 
 .memo-footer {
     padding: 10px;
-    border-top: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.12));
+
+    border-top: 1px solid var(--SmartThemeBorderColor, rgba(0, 0, 0, 0.12));
+
     flex-shrink: 0;
 }
 
 .memo-btn,
 .memo-small-btn {
     cursor: pointer;
-    user-select: none;
 
-    border: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.16));
+    border: 1px solid var(--SmartThemeBorderColor, rgba(0, 0, 0, 0.16));
     border-radius: 8px;
 
     padding: 5px 9px;
-    background: var(--SmartThemeBlurTintColor, rgba(255,255,255,0.08));
+
+    background: var(--SmartThemeBlurTintColor, rgba(255, 255, 255, 0.08));
     color: var(--SmartThemeBodyColor, #222);
 
     font-size: 13px;
     text-align: center;
+
+    user-select: none;
+    -webkit-user-select: none;
+
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .memo-btn:hover,
 .memo-small-btn:hover,
 .memo-collapse-btn:hover {
-    background: rgba(255,255,255,0.16);
+    background: rgba(255, 255, 255, 0.16);
 }
 
 .memo-btn-add-title {
@@ -220,7 +273,9 @@
 .memo-empty,
 .memo-empty-small {
     opacity: 0.65;
+
     font-size: 13px;
+
     padding: 8px;
 }
 
@@ -228,5 +283,17 @@
     #memo-popup {
         width: calc(100vw - 12px);
         max-height: calc(100dvh - 12px);
+    }
+
+    .memo-header {
+        padding: 10px;
+    }
+
+    .memo-body {
+        padding: 8px;
+    }
+
+    .memo-footer {
+        padding: 8px;
     }
 }
