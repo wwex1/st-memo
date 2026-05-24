@@ -46,6 +46,7 @@ jQuery(async () => {
 
     const settings = getSettings();
 
+    // 창 열 때마다 초기화되는 UI 상태
     let collapsedGroups = {};
 
     function uid(prefix) {
@@ -63,6 +64,7 @@ jQuery(async () => {
     async function copyToClipboard(text) {
         const value = String(text || "");
 
+        // 1순위: Clipboard API
         if (navigator.clipboard?.writeText) {
             try {
                 await navigator.clipboard.writeText(value);
@@ -72,6 +74,7 @@ jQuery(async () => {
             }
         }
 
+        // 2순위: textarea + execCommand fallback
         try {
             const ta = document.createElement("textarea");
             ta.value = value;
@@ -120,32 +123,6 @@ jQuery(async () => {
     let memoBgEl = null;
     let memoPopupEl = null;
 
-    // 닫은 직후 지연 click 차단용
-    let memoBlockNextClickUntil = 0;
-
-    // 확장 리로드 / 재삽입 시 중복 DOM 방지
-    document.getElementById("memo-bg")?.remove();
-    document.getElementById("memo-popup")?.remove();
-
-    function eatEvent(e) {
-        if (!e) return;
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation?.();
-    }
-
-    // 닫은 직후 뒤쪽 SillyTavern 버튼으로 튀는 click 차단
-    document.addEventListener("click", (e) => {
-        if (Date.now() < memoBlockNextClickUntil) {
-            eatEvent(e);
-        }
-    }, true);
-
-    function requestCloseMemoModal(e) {
-        eatEvent(e);
-        closeMemoModal();
-    }
-
     function ensureMemoDOM() {
         if (memoBgEl && memoPopupEl) return;
 
@@ -171,53 +148,31 @@ jQuery(async () => {
             </div>
         `;
 
-        // 팝업을 배경 안에 넣음
+        // 팝업을 배경 안에 넣음 → 배경 클릭 = 팝업 바깥 클릭이 자연스럽게 잡힘
         memoBgEl.appendChild(memoPopupEl);
 
-        // 팝업 내부 이벤트가 배경/아래 화면으로 새지 않게 차단
-        memoPopupEl.addEventListener("pointerdown", (e) => {
-            e.stopPropagation();
-        }, { passive: false });
-
-        memoPopupEl.addEventListener("click", (e) => {
-            e.stopPropagation();
-        }, { passive: false });
-
-        // 배경 직접 누르면 닫기
-        memoBgEl.addEventListener("pointerdown", (e) => {
-            if (e.target === memoBgEl) {
-                requestCloseMemoModal(e);
-            }
-        }, { passive: false });
-
-        // pointerdown 이후 늦게 오는 click은 먹기만 함
+        // 배경 직접 클릭한 경우만 닫기
         memoBgEl.addEventListener("click", (e) => {
             if (e.target === memoBgEl) {
-                eatEvent(e);
+                closeMemoModal();
             }
-        }, { passive: false });
-
-        // X 버튼 닫기
-        const closeBtn = memoPopupEl.querySelector(".memo-close");
-
-        closeBtn.addEventListener("pointerdown", requestCloseMemoModal, { passive: false });
-
-        // pointerdown 후 늦게 오는 click이 아래 버튼을 누르지 않게 먹기
-        closeBtn.addEventListener("click", (e) => {
-            eatEvent(e);
-        }, { passive: false });
-
-        memoPopupEl.querySelector("#memo-add-title").addEventListener("click", (e) => {
-            eatEvent(e);
-            addMemoGroup();
         });
+
+        memoBgEl.addEventListener("touchend", (e) => {
+            if (e.target === memoBgEl) {
+                e.preventDefault();
+                closeMemoModal();
+            }
+        });
+
+        memoPopupEl.querySelector(".memo-close").addEventListener("click", closeMemoModal);
+        memoPopupEl.querySelector("#memo-add-title").addEventListener("click", addMemoGroup);
 
         // ESC로 닫기
         document.addEventListener("keydown", (e) => {
             if (!memoModalOpen) return;
-
             if (e.key === "Escape") {
-                eatEvent(e);
+                e.preventDefault();
                 closeMemoModal();
             }
         });
@@ -244,7 +199,6 @@ jQuery(async () => {
         memoPopupEl.classList.add("memo-show");
 
         setTimeout(() => {
-            if (!memoModalOpen) return;
             autoResizeAllTextareas(memoPopupEl);
         }, 50);
     }
@@ -253,9 +207,6 @@ jQuery(async () => {
         if (!memoModalOpen) return;
 
         memoModalOpen = false;
-
-        // 닫힌 직후 같은 좌표에서 발생하는 지연 click 차단
-        memoBlockNextClickUntil = Date.now() + 450;
 
         if (memoBgEl) {
             memoBgEl.classList.remove("memo-show");
@@ -320,7 +271,6 @@ jQuery(async () => {
                     delete collapsedGroups[group.id];
                     collapseBtn.textContent = "▼";
                     contentEl.style.display = "";
-
                     setTimeout(() => {
                         autoResizeAllTextareas(groupEl);
                     }, 0);
@@ -328,13 +278,13 @@ jQuery(async () => {
             }
 
             collapseBtn.addEventListener("click", (e) => {
-                eatEvent(e);
+                e.preventDefault();
+                e.stopPropagation();
                 toggleGroup();
             });
 
             titlebar.addEventListener("click", (e) => {
                 if (e.target === titleInput) return;
-                eatEvent(e);
                 toggleGroup();
             });
 
@@ -347,9 +297,7 @@ jQuery(async () => {
                 persist();
             });
 
-            groupEl.querySelector(".memo-add-item").addEventListener("click", (e) => {
-                eatEvent(e);
-
+            groupEl.querySelector(".memo-add-item").addEventListener("click", () => {
                 const id = uid("item");
 
                 group.items.push({
@@ -371,9 +319,7 @@ jQuery(async () => {
                 }, 0);
             });
 
-            groupEl.querySelector(".memo-delete-title").addEventListener("click", (e) => {
-                eatEvent(e);
-
+            groupEl.querySelector(".memo-delete-title").addEventListener("click", () => {
                 if (!confirm("이 제목과 안에 있는 내용을 전부 삭제할까요?")) return;
 
                 settings.memoGroups = settings.memoGroups.filter(g => g.id !== group.id);
@@ -405,10 +351,6 @@ jQuery(async () => {
 
                     const textarea = itemEl.querySelector(".memo-content");
 
-                    textarea.addEventListener("click", (e) => {
-                        e.stopPropagation();
-                    });
-
                     textarea.addEventListener("input", () => {
                         item.content = textarea.value;
                         persist();
@@ -419,9 +361,7 @@ jQuery(async () => {
                         autoResizeTextarea(textarea);
                     });
 
-                    itemEl.querySelector(".memo-copy-item").addEventListener("click", async (e) => {
-                        eatEvent(e);
-
+                    itemEl.querySelector(".memo-copy-item").addEventListener("click", async () => {
                         const currentText = textarea ? textarea.value : (item.content || "");
                         const ok = await copyToClipboard(currentText);
 
@@ -429,9 +369,7 @@ jQuery(async () => {
                         else toastr.error("복사 실패");
                     });
 
-                    itemEl.querySelector(".memo-delete-item").addEventListener("click", (e) => {
-                        eatEvent(e);
-
+                    itemEl.querySelector(".memo-delete-item").addEventListener("click", () => {
                         if (!confirm("이 내용을 삭제할까요?")) return;
 
                         group.items = group.items.filter(i => i.id !== item.id);
@@ -486,9 +424,7 @@ jQuery(async () => {
     memoMenuBtn.title = "메모";
     memoMenuBtn.innerHTML = '<i class="fa-solid fa-note-sticky"></i> 메모';
 
-    memoMenuBtn.addEventListener("click", (e) => {
-        eatEvent(e);
-
+    memoMenuBtn.addEventListener("click", () => {
         $("#extensionsMenu").hide();
         openMemoModal();
     });
