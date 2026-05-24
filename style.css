@@ -1,0 +1,132 @@
+#st-memo-box-block {
+    margin: 12px auto;
+}
+
+.stmb-block {
+    width: min(760px, calc(100% - 16px));
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.15));
+    border-radius: 12px;
+    background: var(--SmartThemeBlurTintColor, rgba(20,20,20,0.88));
+    color: var(--SmartThemeBodyColor, #eee);
+    box-shadow: 0 4px 18px rgba(0,0,0,0.25);
+    overflow: hidden;
+}
+
+.stmb-block-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.12));
+}
+
+.stmb-block-title {
+    font-weight: 700;
+    font-size: 15px;
+}
+
+.stmb-block-btns {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.stmb-block-btn,
+.stmb-act {
+    cursor: pointer;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.16));
+    border-radius: 8px;
+    padding: 4px 8px;
+    background: rgba(255,255,255,0.06);
+    color: var(--SmartThemeBodyColor, #eee);
+    font-size: 13px;
+}
+
+.stmb-block-btn:hover,
+.stmb-act:hover {
+    background: rgba(255,255,255,0.12);
+}
+
+.stmb-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px;
+}
+
+.stmb-group {
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.14));
+    border-radius: 10px;
+    padding: 10px;
+    background: rgba(255,255,255,0.04);
+}
+
+.stmb-group-head {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.stmb-title-input {
+    width: 100%;
+    font-weight: 700;
+    box-sizing: border-box;
+}
+
+.stmb-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.stmb-item {
+    padding: 8px;
+    border-radius: 8px;
+    background: rgba(0,0,0,0.14);
+}
+
+.stmb-content {
+    width: 100%;
+    min-height: 86px;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.stmb-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.stmb-empty,
+.stmb-empty-small {
+    opacity: 0.65;
+    font-size: 13px;
+    padding: 8px;
+}
+
+@media (max-width: 600px) {
+    .stmb-block {
+        width: calc(100% - 8px);
+    }
+
+    .stmb-group-head {
+        grid-template-columns: 1fr;
+    }
+
+    .stmb-group-head button {
+        width: 100%;
+    }
+
+    .stmb-actions {
+        justify-content: stretch;
+    }
+
+    .stmb-actions button {
+        flex: 1;
+    }
+}
