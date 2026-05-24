@@ -90,6 +90,7 @@ jQuery(async () => {
     // ─── 메모 팝업 DOM (한 번만 생성) ───
 
     let memoModalOpen = false;
+    let memoJustOpened = false;
     let memoBgEl = null;
     let memoPopupEl = null;
 
@@ -113,10 +114,13 @@ jQuery(async () => {
     memoBgEl = document.getElementById("memo-bg");
     memoPopupEl = document.getElementById("memo-popup");
 
-    // 배경 클릭 → 닫기
-    memoBgEl.addEventListener("click", closeMemoModal);
-    memoBgEl.addEventListener("touchend", (e) => {
-        e.preventDefault();
+    // 배경 클릭 → 닫기 (모바일 ST 환경에서 #memo-bg 직접 클릭이 안 잡혀서 document로 위임)
+    document.addEventListener("click", (e) => {
+        if (!memoModalOpen) return;
+        // 팝업 뜬 직후의 클릭(메뉴 버튼 클릭 잔여)은 무시
+        if (memoJustOpened) return;
+        // 팝업 내부 클릭이면 무시
+        if (memoPopupEl && memoPopupEl.contains(e.target)) return;
         closeMemoModal();
     });
 
@@ -166,6 +170,7 @@ jQuery(async () => {
     function openMemoModal() {
         if (memoModalOpen) return;
         memoModalOpen = true;
+        memoJustOpened = true;
 
         resetOpenState();
         renderMemoGroups();
@@ -179,6 +184,9 @@ jQuery(async () => {
             autoResizeAllTextareas(memoPopupEl);
             memoPosPopup();
         }, 100);
+
+        // 메뉴 버튼 클릭이 document로 버블링되어 바로 닫히는 것 방지
+        setTimeout(() => { memoJustOpened = false; }, 300);
     }
 
     function closeMemoModal() {
