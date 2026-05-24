@@ -114,24 +114,38 @@ jQuery(async () => {
     memoBgEl = document.getElementById("memo-bg");
     memoPopupEl = document.getElementById("memo-popup");
 
-    // 배경 클릭 → 닫기 (모바일 ST 환경에서 #memo-bg 직접 클릭이 안 잡혀서 document로 위임)
-    document.addEventListener("click", (e) => {
-        if (!memoModalOpen) return;
-        // 팝업 뜬 직후의 클릭(메뉴 버튼 클릭 잔여)은 무시
-        if (memoJustOpened) return;
-        // 팝업 내부 클릭이면 무시
-        if (memoPopupEl && memoPopupEl.contains(e.target)) return;
+    // 닫기 공통 핸들러
+    function requestCloseMemoModal(e) {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation?.();
+        }
         closeMemoModal();
+    }
+
+    // X 버튼 닫기 (여러 이벤트 모두 잡기)
+    const closeBtn = memoPopupEl.querySelector(".memo-close");
+    ["pointerdown", "click", "touchend"].forEach(evt => {
+        closeBtn.addEventListener(evt, requestCloseMemoModal, { passive: false });
     });
 
-    const closeBtn = memoPopupEl.querySelector(".memo-close");
-    const closeBtnHandler = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+    // 배경 / 바깥 클릭 닫기 (캡처 단계로 ST보다 먼저 잡기)
+    document.addEventListener("pointerdown", (e) => {
+        if (!memoModalOpen) return;
+        if (memoJustOpened) return;
+
+        // X 버튼이면 무조건 닫기
+        if (e.target.closest?.(".memo-close")) {
+            requestCloseMemoModal(e);
+            return;
+        }
+
+        // 팝업 내부면 무시
+        if (memoPopupEl && memoPopupEl.contains(e.target)) return;
+
         closeMemoModal();
-    };
-    closeBtn.addEventListener("click", closeBtnHandler);
-    closeBtn.addEventListener("touchend", closeBtnHandler);
+    }, true);
 
     memoPopupEl.querySelector("#memo-add-title").addEventListener("click", addMemoGroup);
 
