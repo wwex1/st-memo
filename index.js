@@ -1,6 +1,8 @@
 /**
  * Memo Box for SillyTavern
  * 제목별 메모 저장 / 수정 / 복사 / 삭제
+ * 버튼 위치: #extensionsMenu
+ * 창 방식: 중앙 팝업
  */
 
 const MODULE_NAME = "st-memo-box";
@@ -14,8 +16,11 @@ jQuery(async () => {
 
     const { getContext } = SillyTavern;
 
+    // ─── 설정 ───
+
     function getSettings() {
         const { extensionSettings } = getContext();
+
         if (!extensionSettings[MODULE_NAME]) {
             extensionSettings[MODULE_NAME] = {};
         }
@@ -23,18 +28,13 @@ jQuery(async () => {
         const s = extensionSettings[MODULE_NAME];
 
         for (const [k, v] of Object.entries(MEMO_DEFAULTS)) {
-            if (s[k] === undefined) s[k] = JSON.parse(JSON.stringify(v));
+            if (s[k] === undefined) {
+                s[k] = JSON.parse(JSON.stringify(v));
+            }
         }
 
-        if (!Array.isArray(s.memoGroups)) s.memoGroups = [];
-
-        // 마이그레이션: item.title 필드 추가
-        for (const group of s.memoGroups) {
-            if (Array.isArray(group.items)) {
-                for (const item of group.items) {
-                    if (item.title === undefined) item.title = "";
-                }
-            }
+        if (!Array.isArray(s.memoGroups)) {
+            s.memoGroups = [];
         }
 
         return s;
@@ -75,12 +75,22 @@ jQuery(async () => {
         try {
             const ta = document.createElement("textarea");
             ta.value = value;
-            ta.style.cssText = "position:fixed;left:-9999px;top:-9999px;opacity:0;";
+
+            ta.setAttribute("readonly", "");
+            ta.style.position = "fixed";
+            ta.style.left = "-9999px";
+            ta.style.top = "-9999px";
+            ta.style.opacity = "0";
+            ta.style.pointerEvents = "none";
+
             document.body.appendChild(ta);
+
             ta.focus();
             ta.select();
+            ta.setSelectionRange(0, ta.value.length);
 
             const ok = document.execCommand("copy");
+
             document.body.removeChild(ta);
 
             if (ok) return true;
@@ -96,8 +106,6 @@ jQuery(async () => {
 
         textarea.style.height = "auto";
         textarea.style.height = `${textarea.scrollHeight + 2}px`;
-
-        memoPosPopup();
     }
 
     function autoResizeAllTextareas(root = document) {
@@ -109,123 +117,110 @@ jQuery(async () => {
     // ─── 메모 팝업 DOM ───
 
     let memoModalOpen = false;
-    let memoJustOpened = false;
-    let memoJustClosed = false;
-    let memoClosingNow = false;
-
     let memoBgEl = null;
     let memoPopupEl = null;
 
-    // 중복 로딩 방지
+    // 닫은 직후 지연 click 차단용
+    let memoBlockNextClickUntil = 0;
+
+    // 확장 리로드 / 재삽입 시 중복 DOM 방지
     document.getElementById("memo-bg")?.remove();
     document.getElementById("memo-popup")?.remove();
 
-    const memoPopupHtml = `
-    <div id="memo-bg"></div>
-    <div id="memo-popup">
-        <div class="memo-header">
-            <span class="memo-title">📝 메모</span>
-            <span class="memo-close" title="닫기">✕</span>
-        </div>
-        <div class="memo-body">
-            <div id="memo-groups"></div>
-        </div>
-        <div class="memo-footer">
-            <div class="memo-btn memo-btn-add-title" id="memo-add-title">+ 그룹 추가</div>
-        </div>
-    </div>`;
-
-    $("body").append(memoPopupHtml);
-
-    memoBgEl = document.getElementById("memo-bg");
-    memoPopupEl = document.getElementById("memo-popup");
-
-    // ─── 닫기 처리 ───
-
-    function requestCloseMemoModal(e) {
-        if (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation?.();
-        }
-
-        if (memoClosingNow) return;
-
-        memoClosingNow = true;
-        closeMemoModal();
-
-        setTimeout(() => {
-            memoClosingNow = false;
-        }, 350);
-    }
-
-    const closeBtn = memoPopupEl.querySelector(".memo-close");
-
-    // pointerdown이 모바일에서 제일 안정적
-    closeBtn.addEventListener("pointerdown", requestCloseMemoModal, { passive: false });
-
-    // pointer 이벤트가 이상한 일부 환경용 보조
-    closeBtn.addEventListener("click", requestCloseMemoModal, { passive: false });
-
-    // 배경 클릭 / 팝업 바깥 클릭 닫기
-    document.addEventListener("click", (e) => {
-        if (!memoModalOpen) return;
-        if (memoJustOpened) return;
-        if (memoClosingNow) return;
-
-        // 팝업 내부면 무시
-        if (memoPopupEl && memoPopupEl.contains(e.target)) return;
-
-        requestCloseMemoModal(e);
-    });
-
-    memoPopupEl.querySelector("#memo-add-title").addEventListener("click", (e) => {
+    function eatEvent(e) {
+        if (!e) return;
         e.preventDefault();
         e.stopPropagation();
-        addMemoGroup();
-    });
-
-    // ESC 닫기
-    document.addEventListener("keydown", (e) => {
-        if (!memoModalOpen) return;
-
-        if (e.key === "Escape") {
-            e.preventDefault();
-            requestCloseMemoModal(e);
-        }
-    });
-
-    // viewport 대응
-    if (window.visualViewport) {
-        window.visualViewport.addEventListener("resize", () => {
-            if (memoModalOpen) memoPosPopup();
-        });
-
-        window.visualViewport.addEventListener("scroll", () => {
-            if (memoModalOpen) memoPosPopup();
-        });
+        e.stopImmediatePropagation?.();
     }
 
-    function memoPosPopup() {
-        if (!memoPopupEl) return;
-        if (!memoModalOpen) return;
+    // 닫은 직후 뒤쪽 SillyTavern 버튼으로 튀는 click 차단
+    document.addEventListener("click", (e) => {
+        if (Date.now() < memoBlockNextClickUntil) {
+            eatEvent(e);
+        }
+    }, true);
 
-        const vv = window.visualViewport;
-        const vH = vv ? vv.height : window.innerHeight;
-        const vT = vv ? vv.offsetTop : 0;
-        const vW = vv ? vv.width : window.innerWidth;
+    function requestCloseMemoModal(e) {
+        eatEvent(e);
+        closeMemoModal();
+    }
 
-        memoPopupEl.style.display = "flex";
-        memoPopupEl.style.visibility = "hidden";
-        memoPopupEl.style.transform = "none";
+    function ensureMemoDOM() {
+        if (memoBgEl && memoPopupEl) return;
 
-        const pH = memoPopupEl.offsetHeight;
-        const pW = memoPopupEl.offsetWidth;
+        memoBgEl = document.createElement("div");
+        memoBgEl.id = "memo-bg";
+        document.body.appendChild(memoBgEl);
 
-        memoPopupEl.style.visibility = "visible";
+        memoPopupEl = document.createElement("div");
+        memoPopupEl.id = "memo-popup";
 
-        memoPopupEl.style.top = (vT + Math.max(10, (vH - pH) / 2)) + "px";
-        memoPopupEl.style.left = Math.max(5, (vW - pW) / 2) + "px";
+        memoPopupEl.innerHTML = `
+            <div class="memo-header">
+                <span class="memo-title">📝 메모</span>
+                <span class="memo-close" title="닫기">✕</span>
+            </div>
+
+            <div class="memo-body">
+                <div id="memo-groups"></div>
+            </div>
+
+            <div class="memo-footer">
+                <div class="memo-btn memo-btn-add-title" id="memo-add-title">+ 제목 추가</div>
+            </div>
+        `;
+
+        // 팝업을 배경 안에 넣음
+        memoBgEl.appendChild(memoPopupEl);
+
+        // 팝업 내부 이벤트가 배경/아래 화면으로 새지 않게 차단
+        memoPopupEl.addEventListener("pointerdown", (e) => {
+            e.stopPropagation();
+        }, { passive: false });
+
+        memoPopupEl.addEventListener("click", (e) => {
+            e.stopPropagation();
+        }, { passive: false });
+
+        // 배경 직접 누르면 닫기
+        memoBgEl.addEventListener("pointerdown", (e) => {
+            if (e.target === memoBgEl) {
+                requestCloseMemoModal(e);
+            }
+        }, { passive: false });
+
+        // pointerdown 이후 늦게 오는 click은 먹기만 함
+        memoBgEl.addEventListener("click", (e) => {
+            if (e.target === memoBgEl) {
+                eatEvent(e);
+            }
+        }, { passive: false });
+
+        // X 버튼 닫기
+        const closeBtn = memoPopupEl.querySelector(".memo-close");
+
+        closeBtn.addEventListener("pointerdown", requestCloseMemoModal, { passive: false });
+
+        // pointerdown 후 늦게 오는 click이 아래 버튼을 누르지 않게 먹기
+        closeBtn.addEventListener("click", (e) => {
+            eatEvent(e);
+        }, { passive: false });
+
+        memoPopupEl.querySelector("#memo-add-title").addEventListener("click", (e) => {
+            eatEvent(e);
+            addMemoGroup();
+        });
+
+        // ESC로 닫기
+        document.addEventListener("keydown", (e) => {
+            if (!memoModalOpen) return;
+
+            if (e.key === "Escape") {
+                eatEvent(e);
+                closeMemoModal();
+            }
+        });
     }
 
     function resetOpenState() {
@@ -237,51 +232,38 @@ jQuery(async () => {
     }
 
     function openMemoModal() {
-        // 닫힌 직후 튄 click이 다시 여는 것 방지
-        if (memoModalOpen || memoJustClosed || memoClosingNow) return;
+        if (memoModalOpen) return;
 
         memoModalOpen = true;
-        memoJustOpened = true;
 
+        ensureMemoDOM();
         resetOpenState();
         renderMemoGroups();
 
         memoBgEl.classList.add("memo-show");
         memoPopupEl.classList.add("memo-show");
 
-        memoPosPopup();
-
-        setTimeout(() => {
-            if (memoModalOpen) memoPosPopup();
-        }, 50);
-
         setTimeout(() => {
             if (!memoModalOpen) return;
             autoResizeAllTextareas(memoPopupEl);
-            memoPosPopup();
-        }, 100);
-
-        // 메뉴 버튼 클릭 잔여 이벤트 방지
-        setTimeout(() => {
-            memoJustOpened = false;
-        }, 300);
+        }, 50);
     }
 
     function closeMemoModal() {
         if (!memoModalOpen) return;
 
         memoModalOpen = false;
-        memoJustClosed = true;
 
-        memoBgEl.classList.remove("memo-show");
-        memoPopupEl.classList.remove("memo-show");
+        // 닫힌 직후 같은 좌표에서 발생하는 지연 click 차단
+        memoBlockNextClickUntil = Date.now() + 450;
 
-        memoPopupEl.style.display = "none";
+        if (memoBgEl) {
+            memoBgEl.classList.remove("memo-show");
+        }
 
-        // 닫은 직후 뒤쪽 메뉴/버튼으로 click 튀는 것 방지
-        setTimeout(() => {
-            memoJustClosed = false;
-        }, 350);
+        if (memoPopupEl) {
+            memoPopupEl.classList.remove("memo-show");
+        }
     }
 
     // ─── 메모 렌더링 ───
@@ -294,7 +276,6 @@ jQuery(async () => {
 
         if (!settings.memoGroups.length) {
             wrap.innerHTML = `<div class="memo-empty">아직 메모가 없습니다</div>`;
-            memoPosPopup();
             return;
         }
 
@@ -316,7 +297,7 @@ jQuery(async () => {
                 <div class="memo-group-content" style="${isCollapsed ? "display:none;" : ""}">
                     <div class="memo-group-actions">
                         <div class="memo-small-btn memo-add-item">내용 추가</div>
-                        <div class="memo-small-btn memo-delete-title">그룹 삭제</div>
+                        <div class="memo-small-btn memo-delete-title">제목 삭제</div>
                     </div>
 
                     <div class="memo-items"></div>
@@ -342,21 +323,18 @@ jQuery(async () => {
 
                     setTimeout(() => {
                         autoResizeAllTextareas(groupEl);
-                        memoPosPopup();
                     }, 0);
                 }
-
-                memoPosPopup();
             }
 
             collapseBtn.addEventListener("click", (e) => {
-                e.preventDefault();
-                e.stopPropagation();
+                eatEvent(e);
                 toggleGroup();
             });
 
             titlebar.addEventListener("click", (e) => {
                 if (e.target === titleInput) return;
+                eatEvent(e);
                 toggleGroup();
             });
 
@@ -370,14 +348,12 @@ jQuery(async () => {
             });
 
             groupEl.querySelector(".memo-add-item").addEventListener("click", (e) => {
-                e.preventDefault();
-                e.stopPropagation();
+                eatEvent(e);
 
                 const id = uid("item");
 
                 group.items.push({
                     id,
-                    title: "",
                     content: "",
                 });
 
@@ -396,10 +372,9 @@ jQuery(async () => {
             });
 
             groupEl.querySelector(".memo-delete-title").addEventListener("click", (e) => {
-                e.preventDefault();
-                e.stopPropagation();
+                eatEvent(e);
 
-                if (!confirm("이 그룹과 안에 있는 내용을 전부 삭제할까요?")) return;
+                if (!confirm("이 제목과 안에 있는 내용을 전부 삭제할까요?")) return;
 
                 settings.memoGroups = settings.memoGroups.filter(g => g.id !== group.id);
 
@@ -412,24 +387,14 @@ jQuery(async () => {
             const itemsBox = groupEl.querySelector(".memo-items");
 
             if (!group.items.length) {
-                itemsBox.innerHTML = `<div class="memo-empty-small">이 그룹 안에 내용이 없습니다</div>`;
+                itemsBox.innerHTML = `<div class="memo-empty-small">이 제목 안에 내용이 없습니다</div>`;
             } else {
                 group.items.forEach((item) => {
                     const itemEl = document.createElement("div");
                     itemEl.className = "memo-item";
                     itemEl.dataset.itemId = item.id;
 
-                    const hasTitle = !!(item.title && item.title.length > 0);
-
                     itemEl.innerHTML = `
-                        <div class="memo-item-title-row" style="${hasTitle ? "" : "display:none;"}">
-                            <input class="text_pole memo-item-title-input" placeholder="내용 제목" value="${escapeHtml(item.title || "")}">
-                        </div>
-
-                        <div class="memo-add-item-title-row" style="${hasTitle ? "display:none;" : ""}">
-                            <span class="memo-add-item-title-link">+ 제목 추가</span>
-                        </div>
-
                         <textarea class="text_pole memo-content" rows="1" placeholder="내용">${escapeHtml(item.content || "")}</textarea>
 
                         <div class="memo-actions">
@@ -438,43 +403,7 @@ jQuery(async () => {
                         </div>
                     `;
 
-                    const titleRow = itemEl.querySelector(".memo-item-title-row");
-                    const titleInputEl = itemEl.querySelector(".memo-item-title-input");
-                    const addTitleRow = itemEl.querySelector(".memo-add-item-title-row");
-                    const addTitleLink = itemEl.querySelector(".memo-add-item-title-link");
                     const textarea = itemEl.querySelector(".memo-content");
-
-                    addTitleLink.addEventListener("click", (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-
-                        addTitleRow.style.display = "none";
-                        titleRow.style.display = "";
-
-                        titleInputEl.focus();
-                        memoPosPopup();
-                    });
-
-                    titleInputEl.addEventListener("click", (e) => {
-                        e.stopPropagation();
-                    });
-
-                    titleInputEl.addEventListener("input", () => {
-                        item.title = titleInputEl.value;
-                        persist();
-                    });
-
-                    titleInputEl.addEventListener("blur", () => {
-                        if (!titleInputEl.value.trim()) {
-                            item.title = "";
-                            persist();
-
-                            titleRow.style.display = "none";
-                            addTitleRow.style.display = "";
-
-                            memoPosPopup();
-                        }
-                    });
 
                     textarea.addEventListener("click", (e) => {
                         e.stopPropagation();
@@ -491,8 +420,7 @@ jQuery(async () => {
                     });
 
                     itemEl.querySelector(".memo-copy-item").addEventListener("click", async (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
+                        eatEvent(e);
 
                         const currentText = textarea ? textarea.value : (item.content || "");
                         const ok = await copyToClipboard(currentText);
@@ -502,8 +430,7 @@ jQuery(async () => {
                     });
 
                     itemEl.querySelector(".memo-delete-item").addEventListener("click", (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
+                        eatEvent(e);
 
                         if (!confirm("이 내용을 삭제할까요?")) return;
 
@@ -526,12 +453,12 @@ jQuery(async () => {
 
         setTimeout(() => {
             autoResizeAllTextareas(wrap);
-            memoPosPopup();
         }, 0);
     }
 
     function addMemoGroup() {
-        const title = prompt("그룹 이름을 입력하세요", "");
+        const title = prompt("제목을 입력하세요", "");
+
         if (!title || !title.trim()) return;
 
         const id = uid("group");
@@ -542,6 +469,7 @@ jQuery(async () => {
             items: [],
         });
 
+        // 새 제목은 바로 열림
         delete collapsedGroups[id];
 
         persist();
@@ -559,12 +487,7 @@ jQuery(async () => {
     memoMenuBtn.innerHTML = '<i class="fa-solid fa-note-sticky"></i> 메모';
 
     memoMenuBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation?.();
-
-        // 닫은 직후 튄 click으로 다시 열리는 것 방지
-        if (memoJustClosed || memoClosingNow) return;
+        eatEvent(e);
 
         $("#extensionsMenu").hide();
         openMemoModal();
