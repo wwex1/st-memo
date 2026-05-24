@@ -19,10 +19,13 @@ jQuery(async () => {
         if (!extensionSettings[MODULE_NAME]) {
             extensionSettings[MODULE_NAME] = {};
         }
+
         const s = extensionSettings[MODULE_NAME];
+
         for (const [k, v] of Object.entries(MEMO_DEFAULTS)) {
             if (s[k] === undefined) s[k] = JSON.parse(JSON.stringify(v));
         }
+
         if (!Array.isArray(s.memoGroups)) s.memoGroups = [];
 
         // 마이그레이션: item.title 필드 추가
@@ -37,7 +40,9 @@ jQuery(async () => {
         return s;
     }
 
-    function persist() { getContext().saveSettingsDebounced(); }
+    function persist() {
+        getContext().saveSettingsDebounced();
+    }
 
     const settings = getSettings();
 
@@ -57,27 +62,41 @@ jQuery(async () => {
 
     async function copyToClipboard(text) {
         const value = String(text || "");
+
         if (navigator.clipboard?.writeText) {
-            try { await navigator.clipboard.writeText(value); return true; }
-            catch (e) { console.log(`[${MODULE_NAME}] clipboard API failed:`, e); }
+            try {
+                await navigator.clipboard.writeText(value);
+                return true;
+            } catch (e) {
+                console.log(`[${MODULE_NAME}] clipboard API failed:`, e);
+            }
         }
+
         try {
             const ta = document.createElement("textarea");
             ta.value = value;
             ta.style.cssText = "position:fixed;left:-9999px;top:-9999px;opacity:0;";
             document.body.appendChild(ta);
-            ta.focus(); ta.select();
+            ta.focus();
+            ta.select();
+
             const ok = document.execCommand("copy");
             document.body.removeChild(ta);
+
             if (ok) return true;
-        } catch (e) { console.log(`[${MODULE_NAME}] textarea fallback failed:`, e); }
+        } catch (e) {
+            console.log(`[${MODULE_NAME}] textarea fallback failed:`, e);
+        }
+
         return false;
     }
 
     function autoResizeTextarea(textarea) {
         if (!textarea) return;
+
         textarea.style.height = "auto";
         textarea.style.height = `${textarea.scrollHeight + 2}px`;
+
         memoPosPopup();
     }
 
@@ -87,12 +106,19 @@ jQuery(async () => {
         });
     }
 
-    // ─── 메모 팝업 DOM (한 번만 생성) ───
+    // ─── 메모 팝업 DOM ───
 
     let memoModalOpen = false;
     let memoJustOpened = false;
+    let memoJustClosed = false;
+    let memoClosingNow = false;
+
     let memoBgEl = null;
     let memoPopupEl = null;
+
+    // 중복 로딩 방지
+    document.getElementById("memo-bg")?.remove();
+    document.getElementById("memo-popup")?.remove();
 
     const memoPopupHtml = `
     <div id="memo-bg"></div>
@@ -114,55 +140,75 @@ jQuery(async () => {
     memoBgEl = document.getElementById("memo-bg");
     memoPopupEl = document.getElementById("memo-popup");
 
-    // 닫기 공통 핸들러
+    // ─── 닫기 처리 ───
+
     function requestCloseMemoModal(e) {
         if (e) {
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation?.();
         }
+
+        if (memoClosingNow) return;
+
+        memoClosingNow = true;
         closeMemoModal();
+
+        setTimeout(() => {
+            memoClosingNow = false;
+        }, 350);
     }
 
-    // X 버튼 닫기 (여러 이벤트 모두 잡기)
     const closeBtn = memoPopupEl.querySelector(".memo-close");
-    ["pointerdown", "click", "touchend"].forEach(evt => {
-        closeBtn.addEventListener(evt, requestCloseMemoModal, { passive: false });
-    });
 
-    // 배경 / 바깥 클릭 닫기 (캡처 단계로 ST보다 먼저 잡기)
-    document.addEventListener("pointerdown", (e) => {
+    // pointerdown이 모바일에서 제일 안정적
+    closeBtn.addEventListener("pointerdown", requestCloseMemoModal, { passive: false });
+
+    // pointer 이벤트가 이상한 일부 환경용 보조
+    closeBtn.addEventListener("click", requestCloseMemoModal, { passive: false });
+
+    // 배경 클릭 / 팝업 바깥 클릭 닫기
+    document.addEventListener("click", (e) => {
         if (!memoModalOpen) return;
         if (memoJustOpened) return;
-
-        // X 버튼이면 무조건 닫기
-        if (e.target.closest?.(".memo-close")) {
-            requestCloseMemoModal(e);
-            return;
-        }
+        if (memoClosingNow) return;
 
         // 팝업 내부면 무시
         if (memoPopupEl && memoPopupEl.contains(e.target)) return;
 
-        closeMemoModal();
-    }, true);
-
-    memoPopupEl.querySelector("#memo-add-title").addEventListener("click", addMemoGroup);
-
-    // ESC
-    document.addEventListener("keydown", (e) => {
-        if (!memoModalOpen) return;
-        if (e.key === "Escape") { e.preventDefault(); closeMemoModal(); }
+        requestCloseMemoModal(e);
     });
 
-    // viewport
+    memoPopupEl.querySelector("#memo-add-title").addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        addMemoGroup();
+    });
+
+    // ESC 닫기
+    document.addEventListener("keydown", (e) => {
+        if (!memoModalOpen) return;
+
+        if (e.key === "Escape") {
+            e.preventDefault();
+            requestCloseMemoModal(e);
+        }
+    });
+
+    // viewport 대응
     if (window.visualViewport) {
-        window.visualViewport.addEventListener("resize", () => { if (memoModalOpen) memoPosPopup(); });
-        window.visualViewport.addEventListener("scroll", () => { if (memoModalOpen) memoPosPopup(); });
+        window.visualViewport.addEventListener("resize", () => {
+            if (memoModalOpen) memoPosPopup();
+        });
+
+        window.visualViewport.addEventListener("scroll", () => {
+            if (memoModalOpen) memoPosPopup();
+        });
     }
 
     function memoPosPopup() {
         if (!memoPopupEl) return;
+        if (!memoModalOpen) return;
 
         const vv = window.visualViewport;
         const vH = vv ? vv.height : window.innerHeight;
@@ -184,13 +230,16 @@ jQuery(async () => {
 
     function resetOpenState() {
         collapsedGroups = {};
+
         for (const group of settings.memoGroups) {
             collapsedGroups[group.id] = true;
         }
     }
 
     function openMemoModal() {
-        if (memoModalOpen) return;
+        // 닫힌 직후 튄 click이 다시 여는 것 방지
+        if (memoModalOpen || memoJustClosed || memoClosingNow) return;
+
         memoModalOpen = true;
         memoJustOpened = true;
 
@@ -201,23 +250,38 @@ jQuery(async () => {
         memoPopupEl.classList.add("memo-show");
 
         memoPosPopup();
-        setTimeout(memoPosPopup, 50);
+
         setTimeout(() => {
+            if (memoModalOpen) memoPosPopup();
+        }, 50);
+
+        setTimeout(() => {
+            if (!memoModalOpen) return;
             autoResizeAllTextareas(memoPopupEl);
             memoPosPopup();
         }, 100);
 
-        // 메뉴 버튼 클릭이 document로 버블링되어 바로 닫히는 것 방지
-        setTimeout(() => { memoJustOpened = false; }, 300);
+        // 메뉴 버튼 클릭 잔여 이벤트 방지
+        setTimeout(() => {
+            memoJustOpened = false;
+        }, 300);
     }
 
     function closeMemoModal() {
         if (!memoModalOpen) return;
+
         memoModalOpen = false;
+        memoJustClosed = true;
 
         memoBgEl.classList.remove("memo-show");
         memoPopupEl.classList.remove("memo-show");
+
         memoPopupEl.style.display = "none";
+
+        // 닫은 직후 뒤쪽 메뉴/버튼으로 click 튀는 것 방지
+        setTimeout(() => {
+            memoJustClosed = false;
+        }, 350);
     }
 
     // ─── 메모 렌더링 ───
@@ -266,6 +330,7 @@ jQuery(async () => {
 
             function toggleGroup() {
                 const nextCollapsed = !collapsedGroups[group.id];
+
                 if (nextCollapsed) {
                     collapsedGroups[group.id] = true;
                     collapseBtn.textContent = "▶";
@@ -274,11 +339,13 @@ jQuery(async () => {
                     delete collapsedGroups[group.id];
                     collapseBtn.textContent = "▼";
                     contentEl.style.display = "";
+
                     setTimeout(() => {
                         autoResizeAllTextareas(groupEl);
                         memoPosPopup();
                     }, 0);
                 }
+
                 memoPosPopup();
             }
 
@@ -293,17 +360,29 @@ jQuery(async () => {
                 toggleGroup();
             });
 
-            titleInput.addEventListener("click", (e) => e.stopPropagation());
+            titleInput.addEventListener("click", (e) => {
+                e.stopPropagation();
+            });
 
             titleInput.addEventListener("input", () => {
                 group.title = titleInput.value;
                 persist();
             });
 
-            groupEl.querySelector(".memo-add-item").addEventListener("click", () => {
+            groupEl.querySelector(".memo-add-item").addEventListener("click", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
                 const id = uid("item");
-                group.items.push({ id, title: "", content: "" });
+
+                group.items.push({
+                    id,
+                    title: "",
+                    content: "",
+                });
+
                 delete collapsedGroups[group.id];
+
                 persist();
                 renderMemoGroups();
 
@@ -316,10 +395,16 @@ jQuery(async () => {
                 }, 0);
             });
 
-            groupEl.querySelector(".memo-delete-title").addEventListener("click", () => {
+            groupEl.querySelector(".memo-delete-title").addEventListener("click", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
                 if (!confirm("이 그룹과 안에 있는 내용을 전부 삭제할까요?")) return;
+
                 settings.memoGroups = settings.memoGroups.filter(g => g.id !== group.id);
+
                 delete collapsedGroups[group.id];
+
                 persist();
                 renderMemoGroups();
             });
@@ -359,11 +444,19 @@ jQuery(async () => {
                     const addTitleLink = itemEl.querySelector(".memo-add-item-title-link");
                     const textarea = itemEl.querySelector(".memo-content");
 
-                    addTitleLink.addEventListener("click", () => {
+                    addTitleLink.addEventListener("click", (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+
                         addTitleRow.style.display = "none";
                         titleRow.style.display = "";
+
                         titleInputEl.focus();
                         memoPosPopup();
+                    });
+
+                    titleInputEl.addEventListener("click", (e) => {
+                        e.stopPropagation();
                     });
 
                     titleInputEl.addEventListener("input", () => {
@@ -375,10 +468,16 @@ jQuery(async () => {
                         if (!titleInputEl.value.trim()) {
                             item.title = "";
                             persist();
+
                             titleRow.style.display = "none";
                             addTitleRow.style.display = "";
+
                             memoPosPopup();
                         }
+                    });
+
+                    textarea.addEventListener("click", (e) => {
+                        e.stopPropagation();
                     });
 
                     textarea.addEventListener("input", () => {
@@ -391,23 +490,34 @@ jQuery(async () => {
                         autoResizeTextarea(textarea);
                     });
 
-                    itemEl.querySelector(".memo-copy-item").addEventListener("click", async () => {
+                    itemEl.querySelector(".memo-copy-item").addEventListener("click", async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+
                         const currentText = textarea ? textarea.value : (item.content || "");
                         const ok = await copyToClipboard(currentText);
+
                         if (ok) toastr.success("복사됨");
                         else toastr.error("복사 실패");
                     });
 
-                    itemEl.querySelector(".memo-delete-item").addEventListener("click", () => {
+                    itemEl.querySelector(".memo-delete-item").addEventListener("click", (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+
                         if (!confirm("이 내용을 삭제할까요?")) return;
+
                         group.items = group.items.filter(i => i.id !== item.id);
+
                         persist();
                         renderMemoGroups();
                     });
 
                     itemsBox.appendChild(itemEl);
 
-                    setTimeout(() => autoResizeTextarea(textarea), 0);
+                    setTimeout(() => {
+                        autoResizeTextarea(textarea);
+                    }, 0);
                 });
             }
 
@@ -425,12 +535,15 @@ jQuery(async () => {
         if (!title || !title.trim()) return;
 
         const id = uid("group");
+
         settings.memoGroups.push({
             id,
             title: title.trim(),
             items: [],
         });
+
         delete collapsedGroups[id];
+
         persist();
         renderMemoGroups();
     }
@@ -445,24 +558,37 @@ jQuery(async () => {
     memoMenuBtn.title = "메모";
     memoMenuBtn.innerHTML = '<i class="fa-solid fa-note-sticky"></i> 메모';
 
-    memoMenuBtn.addEventListener("click", () => {
+    memoMenuBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation?.();
+
+        // 닫은 직후 튄 click으로 다시 열리는 것 방지
+        if (memoJustClosed || memoClosingNow) return;
+
         $("#extensionsMenu").hide();
         openMemoModal();
     });
 
     const extMenu = document.getElementById("extensionsMenu");
+
     if (extMenu) {
         extMenu.appendChild(memoMenuBtn);
     } else {
         const obs = new MutationObserver((_, o) => {
             const m = document.getElementById("extensionsMenu");
+
             if (m) {
                 document.getElementById("memo_menu_btn")?.remove();
                 m.appendChild(memoMenuBtn);
                 o.disconnect();
             }
         });
-        obs.observe(document.body, { childList: true, subtree: true });
+
+        obs.observe(document.body, {
+            childList: true,
+            subtree: true,
+        });
     }
 
     console.log("[Memo Box] 로드 완료");
