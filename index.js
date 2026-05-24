@@ -106,8 +106,6 @@ jQuery(async () => {
 
         textarea.style.height = "auto";
         textarea.style.height = `${textarea.scrollHeight + 2}px`;
-
-        memoPosPopup();
     }
 
     function autoResizeAllTextareas(root = document) {
@@ -147,28 +145,21 @@ jQuery(async () => {
             </div>
         `;
 
-        document.body.appendChild(memoPopupEl);
+        // 팝업을 배경 안에 넣음 → 배경 클릭 = 팝업 바깥 클릭이 자연스럽게 잡힘
+        memoBgEl.appendChild(memoPopupEl);
 
-        // 배경 클릭하면 닫기
+        // 배경 직접 클릭한 경우만 닫기
         memoBgEl.addEventListener("click", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            closeMemoModal();
+            if (e.target === memoBgEl) {
+                closeMemoModal();
+            }
         });
 
         memoBgEl.addEventListener("touchend", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            closeMemoModal();
-        });
-
-        // 팝업 내부 클릭은 배경 클릭으로 전달되지 않게 막기
-        memoPopupEl.addEventListener("click", (e) => {
-            e.stopPropagation();
-        });
-
-        memoPopupEl.addEventListener("touchend", (e) => {
-            e.stopPropagation();
+            if (e.target === memoBgEl) {
+                e.preventDefault();
+                closeMemoModal();
+            }
         });
 
         memoPopupEl.querySelector(".memo-close").addEventListener("click", closeMemoModal);
@@ -182,37 +173,6 @@ jQuery(async () => {
                 closeMemoModal();
             }
         });
-
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener("resize", () => {
-                if (memoModalOpen) memoPosPopup();
-            });
-
-            window.visualViewport.addEventListener("scroll", () => {
-                if (memoModalOpen) memoPosPopup();
-            });
-        }
-    }
-
-    function memoPosPopup() {
-        if (!memoPopupEl) return;
-
-        const vv = window.visualViewport;
-        const vH = vv ? vv.height : window.innerHeight;
-        const vT = vv ? vv.offsetTop : 0;
-        const vW = vv ? vv.width : window.innerWidth;
-
-        memoPopupEl.style.display = "flex";
-        memoPopupEl.style.visibility = "hidden";
-        memoPopupEl.style.transform = "none";
-
-        const pH = memoPopupEl.offsetHeight;
-        const pW = memoPopupEl.offsetWidth;
-
-        memoPopupEl.style.visibility = "visible";
-
-        memoPopupEl.style.top = (vT + Math.max(10, (vH - pH) / 2)) + "px";
-        memoPopupEl.style.left = Math.max(5, (vW - pW) / 2) + "px";
     }
 
     function resetOpenState() {
@@ -235,10 +195,8 @@ jQuery(async () => {
         memoBgEl.classList.add("memo-show");
         memoPopupEl.classList.add("memo-show");
 
-        memoPosPopup();
         setTimeout(() => {
             autoResizeAllTextareas(memoPopupEl);
-            memoPosPopup();
         }, 50);
     }
 
@@ -253,7 +211,6 @@ jQuery(async () => {
 
         if (memoPopupEl) {
             memoPopupEl.classList.remove("memo-show");
-            memoPopupEl.style.display = "none";
         }
     }
 
@@ -267,7 +224,6 @@ jQuery(async () => {
 
         if (!settings.memoGroups.length) {
             wrap.innerHTML = `<div class="memo-empty">아직 메모가 없습니다</div>`;
-            memoPosPopup();
             return;
         }
 
@@ -314,11 +270,8 @@ jQuery(async () => {
                     contentEl.style.display = "";
                     setTimeout(() => {
                         autoResizeAllTextareas(groupEl);
-                        memoPosPopup();
                     }, 0);
                 }
-
-                memoPosPopup();
             }
 
             collapseBtn.addEventListener("click", (e) => {
@@ -435,7 +388,6 @@ jQuery(async () => {
 
         setTimeout(() => {
             autoResizeAllTextareas(wrap);
-            memoPosPopup();
         }, 0);
     }
 
