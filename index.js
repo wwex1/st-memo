@@ -2,356 +2,345 @@
  * Memo Box for SillyTavern
  * 제목별 메모 저장 / 수정 / 복사 / 삭제
  * 버튼 위치: #extensionsMenu
- * 메모창 위치: 플로팅
+ * 창 방식: 키워드 창처럼 중앙 팝업
  */
 
-const EXT_NAME = 'st-MemoBox';
+const MODULE_NAME = "st-memo-box";
 
-const DEFAULTS = {
+const MEMO_DEFAULTS = {
     memoGroups: [],
 };
 
-let ctx = null;
-let cfg = {};
+jQuery(async () => {
+    console.log("[Memo Box] 확장프로그램 로딩...");
 
-function persist() {
-    try {
-        ctx.saveSettingsDebounced();
-    } catch (e) {
-        console.log(`[${EXT_NAME}] save failed`, e);
-    }
-}
+    const { getContext } = SillyTavern;
 
-function uid(prefix) {
-    return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
+    // ─── 설정 ───
 
-function ensureSettings() {
-    if (!ctx.extensionSettings[EXT_NAME]) {
-        ctx.extensionSettings[EXT_NAME] = JSON.parse(JSON.stringify(DEFAULTS));
-    }
+    function getSettings() {
+        const { extensionSettings } = getContext();
 
-    cfg = ctx.extensionSettings[EXT_NAME];
-
-    if (!Array.isArray(cfg.memoGroups)) {
-        cfg.memoGroups = [];
-    }
-}
-
-function toastSuccess(text) {
-    if (window.toastr) toastr.success(text);
-    else console.log(text);
-}
-
-function toastError(text) {
-    if (window.toastr) toastr.error(text);
-    else console.error(text);
-}
-
-async function copyToClipboard(text) {
-    try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            await navigator.clipboard.writeText(text);
-            return true;
+        if (!extensionSettings[MODULE_NAME]) {
+            extensionSettings[MODULE_NAME] = {};
         }
-    } catch {}
 
-    try {
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.position = 'fixed';
-        ta.style.left = '-9999px';
-        ta.style.top = '-9999px';
-        document.body.appendChild(ta);
-        ta.focus();
-        ta.select();
+        const s = extensionSettings[MODULE_NAME];
 
-        const ok = document.execCommand('copy');
-        ta.remove();
+        for (const [k, v] of Object.entries(MEMO_DEFAULTS)) {
+            if (s[k] === undefined) {
+                s[k] = JSON.parse(JSON.stringify(v));
+            }
+        }
 
-        return ok;
-    } catch {
+        if (!Array.isArray(s.memoGroups)) {
+            s.memoGroups = [];
+        }
+
+        return s;
+    }
+
+    function persist() {
+        getContext().saveSettingsDebounced();
+    }
+
+    const settings = getSettings();
+
+    function uid(prefix) {
+        return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    function escapeHtml(str = "") {
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+    }
+
+    async function copyToClipboard(text) {
+        if (navigator.clipboard?.writeText) {
+            try {
+                await navigator.clipboard.writeText(text);
+                return true;
+            } catch (e) {
+                console.log(`[${MODULE_NAME}] clipboard API failed:`, e);
+            }
+        }
+
+        try {
+            const ta = document.createElement("textarea");
+            ta.value = text;
+            ta.style.cssText = "position:fixed;left:-9999px;top:-9999px;opacity:0;";
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+
+            const ok = document.execCommand("copy");
+            document.body.removeChild(ta);
+
+            if (ok) return true;
+        } catch (e) {
+            console.log(`[${MODULE_NAME}] textarea fallback failed:`, e);
+        }
+
         return false;
     }
-}
 
-function askTitle() {
-    return prompt('제목을 입력하세요', '');
-}
+    // ─── 메모 팝업 DOM ───
 
-function askConfirm(text) {
-    return confirm(text);
-}
+    let memoModalOpen = false;
+    let memoBgEl = null;
+    let memoPopupEl = null;
 
-// ─── 부팅 ───
+    function ensureMemoDOM() {
+        if (memoBgEl && memoPopupEl) return;
 
-function boot() {
-    try {
-        console.log(`[${EXT_NAME}] boot`);
+        memoBgEl = document.createElement("div");
+        memoBgEl.id = "memo-bg";
+        document.body.appendChild(memoBgEl);
 
-        ctx = SillyTavern.getContext();
-        ensureSettings();
+        memoPopupEl = document.createElement("div");
+        memoPopupEl.id = "memo-popup";
 
-        attachMenuButton();
-
-        console.log(`[${EXT_NAME}] ready`);
-    } catch (e) {
-        console.error(`[${EXT_NAME}] boot failed`, e);
-    }
-}
-
-// ─── 메뉴 버튼 ───
-
-function attachMenuButton() {
-    const old = document.getElementById('st_memo_box_btn');
-    if (old) old.remove();
-
-    const btn = document.createElement('div');
-    btn.id = 'st_memo_box_btn';
-    btn.className = 'list-group-item flex-container flexGap5 interactable';
-    btn.title = '메모';
-    btn.innerHTML = '<i class="fa-solid fa-note-sticky"></i> 메모';
-
-    btn.onclick = function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-
-        console.log(`[${EXT_NAME}] clicked`);
-
-        const menu = document.getElementById('extensionsMenu');
-        if (menu) menu.style.display = 'none';
-
-        toggleMemoBlock();
-    };
-
-    const menuNow = document.getElementById('extensionsMenu');
-
-    if (menuNow) {
-        menuNow.appendChild(btn);
-        return;
-    }
-
-    const observer = new MutationObserver(() => {
-        const menu = document.getElementById('extensionsMenu');
-        if (!menu) return;
-
-        if (!document.getElementById('st_memo_box_btn')) {
-            menu.appendChild(btn);
-        }
-
-        observer.disconnect();
-    });
-
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-    });
-}
-
-// ─── 메모창 ───
-
-function toggleMemoBlock() {
-    const existing = document.getElementById('st-memo-box-block');
-
-    if (existing) {
-        existing.remove();
-        return;
-    }
-
-    showMemoBlock();
-}
-
-function removeMemoBlock() {
-    const existing = document.getElementById('st-memo-box-block');
-    if (existing) existing.remove();
-}
-
-function showMemoBlock() {
-    try {
-        console.log(`[${EXT_NAME}] showMemoBlock`);
-
-        ensureSettings();
-        removeMemoBlock();
-
-        const block = document.createElement('div');
-        block.id = 'st-memo-box-block';
-        block.className = 'stmb-block';
-
-        block.innerHTML = `
-            <div class="stmb-block-head">
-                <span class="stmb-block-title">📝 메모</span>
-                <div class="stmb-block-btns">
-                    <button class="stmb-block-btn" id="stmb-add-title" type="button" title="제목 추가">＋</button>
-                    <button class="stmb-block-btn" id="stmb-close" type="button" title="닫기">✕</button>
-                </div>
+        memoPopupEl.innerHTML = `
+            <div class="memo-header">
+                <span class="memo-title">📝 메모</span>
+                <span class="memo-close" title="닫기">✕</span>
             </div>
-            <div class="stmb-body" id="stmb-body"></div>
+
+            <div class="memo-body">
+                <div id="memo-groups"></div>
+            </div>
+
+            <div class="memo-footer">
+                <div class="memo-btn memo-btn-add-title" id="memo-add-title">+ 제목 추가</div>
+            </div>
         `;
 
-        document.body.appendChild(block);
+        document.body.appendChild(memoPopupEl);
 
-        document.getElementById('stmb-close').onclick = removeMemoBlock;
-        document.getElementById('stmb-add-title').onclick = addMemoGroup;
+        memoBgEl.addEventListener("click", closeMemoModal);
+        memoBgEl.addEventListener("touchend", (e) => {
+            e.preventDefault();
+            closeMemoModal();
+        });
 
-        renderMemoBody();
+        memoPopupEl.querySelector(".memo-close").addEventListener("click", closeMemoModal);
+        memoPopupEl.querySelector("#memo-add-title").addEventListener("click", addMemoGroup);
 
-        console.log(`[${EXT_NAME}] block appended`);
-    } catch (e) {
-        console.error(`[${EXT_NAME}] showMemoBlock failed`, e);
-        alert(`메모창 생성 실패: ${e.message}`);
-    }
-}
-
-function renderMemoBody() {
-    const body = document.getElementById('stmb-body');
-    if (!body) return;
-
-    body.innerHTML = '';
-
-    if (!cfg.memoGroups.length) {
-        const empty = document.createElement('div');
-        empty.className = 'stmb-empty';
-        empty.textContent = '아직 메모가 없습니다';
-        body.appendChild(empty);
-        return;
-    }
-
-    cfg.memoGroups.forEach(group => {
-        if (!Array.isArray(group.items)) group.items = [];
-
-        const groupEl = document.createElement('div');
-        groupEl.className = 'stmb-group';
-        groupEl.dataset.groupId = group.id;
-
-        const head = document.createElement('div');
-        head.className = 'stmb-group-head';
-
-        const titleInput = document.createElement('input');
-        titleInput.className = 'text_pole stmb-title-input';
-        titleInput.placeholder = '제목';
-        titleInput.value = group.title || '';
-        titleInput.oninput = function () {
-            group.title = titleInput.value;
-            persist();
-        };
-
-        const addItemBtn = document.createElement('button');
-        addItemBtn.className = 'stmb-act';
-        addItemBtn.type = 'button';
-        addItemBtn.textContent = '내용 추가';
-        addItemBtn.onclick = function () {
-            group.items.push({
-                id: uid('item'),
-                content: '',
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener("resize", () => {
+                if (memoModalOpen) memoPosPopup();
             });
 
-            persist();
-            renderMemoBody();
-        };
-
-        const deleteGroupBtn = document.createElement('button');
-        deleteGroupBtn.className = 'stmb-act';
-        deleteGroupBtn.type = 'button';
-        deleteGroupBtn.textContent = '제목 삭제';
-        deleteGroupBtn.onclick = function () {
-            if (!askConfirm('이 제목과 안에 있는 내용을 전부 삭제할까요?')) return;
-
-            cfg.memoGroups = cfg.memoGroups.filter(g => g.id !== group.id);
-
-            persist();
-            renderMemoBody();
-        };
-
-        head.appendChild(titleInput);
-        head.appendChild(addItemBtn);
-        head.appendChild(deleteGroupBtn);
-
-        const itemsBox = document.createElement('div');
-        itemsBox.className = 'stmb-items';
-
-        if (!group.items.length) {
-            const empty = document.createElement('div');
-            empty.className = 'stmb-empty-small';
-            empty.textContent = '이 제목 안에 내용이 없습니다';
-            itemsBox.appendChild(empty);
-        } else {
-            group.items.forEach(item => {
-                const itemEl = document.createElement('div');
-                itemEl.className = 'stmb-item';
-                itemEl.dataset.itemId = item.id;
-
-                const textarea = document.createElement('textarea');
-                textarea.className = 'text_pole stmb-content';
-                textarea.rows = 4;
-                textarea.placeholder = '내용';
-                textarea.value = item.content || '';
-                textarea.oninput = function () {
-                    item.content = textarea.value;
-                    persist();
-                };
-
-                const actions = document.createElement('div');
-                actions.className = 'stmb-actions';
-
-                const copyBtn = document.createElement('button');
-                copyBtn.className = 'stmb-act';
-                copyBtn.type = 'button';
-                copyBtn.textContent = '📋 복사';
-                copyBtn.onclick = async function () {
-                    const ok = await copyToClipboard(item.content || '');
-                    if (ok) toastSuccess('복사됨');
-                    else toastError('복사 실패');
-                };
-
-                const deleteBtn = document.createElement('button');
-                deleteBtn.className = 'stmb-act';
-                deleteBtn.type = 'button';
-                deleteBtn.textContent = '🗑️ 삭제';
-                deleteBtn.onclick = function () {
-                    if (!askConfirm('이 내용을 삭제할까요?')) return;
-
-                    group.items = group.items.filter(i => i.id !== item.id);
-
-                    persist();
-                    renderMemoBody();
-                };
-
-                actions.appendChild(copyBtn);
-                actions.appendChild(deleteBtn);
-
-                itemEl.appendChild(textarea);
-                itemEl.appendChild(actions);
-
-                itemsBox.appendChild(itemEl);
+            window.visualViewport.addEventListener("scroll", () => {
+                if (memoModalOpen) memoPosPopup();
             });
         }
+    }
 
-        groupEl.appendChild(head);
-        groupEl.appendChild(itemsBox);
+    function memoPosPopup() {
+        if (!memoPopupEl) return;
 
-        body.appendChild(groupEl);
+        const vv = window.visualViewport;
+        const vH = vv ? vv.height : window.innerHeight;
+        const vT = vv ? vv.offsetTop : 0;
+        const vW = vv ? vv.width : window.innerWidth;
+
+        memoPopupEl.style.display = "flex";
+        memoPopupEl.style.visibility = "hidden";
+        memoPopupEl.style.transform = "none";
+
+        const pH = memoPopupEl.offsetHeight;
+        const pW = memoPopupEl.offsetWidth;
+
+        memoPopupEl.style.visibility = "visible";
+
+        memoPopupEl.style.top = (vT + Math.max(10, (vH - pH) / 2)) + "px";
+        memoPopupEl.style.left = Math.max(5, (vW - pW) / 2) + "px";
+    }
+
+    function openMemoModal() {
+        if (memoModalOpen) return;
+
+        memoModalOpen = true;
+        ensureMemoDOM();
+        renderMemoGroups();
+
+        memoBgEl.classList.add("memo-show");
+        memoPopupEl.classList.add("memo-show");
+
+        memoPosPopup();
+        setTimeout(memoPosPopup, 50);
+    }
+
+    function closeMemoModal() {
+        if (!memoModalOpen) return;
+
+        memoModalOpen = false;
+
+        if (memoBgEl) memoBgEl.classList.remove("memo-show");
+
+        if (memoPopupEl) {
+            memoPopupEl.classList.remove("memo-show");
+            memoPopupEl.style.display = "none";
+        }
+    }
+
+    // ─── 메모 렌더링 ───
+
+    function renderMemoGroups() {
+        const wrap = document.getElementById("memo-groups");
+        if (!wrap) return;
+
+        wrap.innerHTML = "";
+
+        if (!settings.memoGroups.length) {
+            wrap.innerHTML = `<div class="memo-empty">아직 메모가 없습니다</div>`;
+            memoPosPopup();
+            return;
+        }
+
+        settings.memoGroups.forEach((group) => {
+            if (!Array.isArray(group.items)) group.items = [];
+
+            const groupEl = document.createElement("div");
+            groupEl.className = "memo-group";
+            groupEl.dataset.groupId = group.id;
+
+            groupEl.innerHTML = `
+                <div class="memo-group-head">
+                    <input class="text_pole memo-title-input" placeholder="제목" value="${escapeHtml(group.title || "")}">
+                    <div class="memo-small-btn memo-add-item">내용 추가</div>
+                    <div class="memo-small-btn memo-delete-title">제목 삭제</div>
+                </div>
+                <div class="memo-items"></div>
+            `;
+
+            const titleInput = groupEl.querySelector(".memo-title-input");
+            titleInput.addEventListener("input", () => {
+                group.title = titleInput.value;
+                persist();
+            });
+
+            groupEl.querySelector(".memo-add-item").addEventListener("click", () => {
+                group.items.push({
+                    id: uid("item"),
+                    content: "",
+                });
+
+                persist();
+                renderMemoGroups();
+            });
+
+            groupEl.querySelector(".memo-delete-title").addEventListener("click", () => {
+                if (!confirm("이 제목과 안에 있는 내용을 전부 삭제할까요?")) return;
+
+                settings.memoGroups = settings.memoGroups.filter(g => g.id !== group.id);
+
+                persist();
+                renderMemoGroups();
+            });
+
+            const itemsBox = groupEl.querySelector(".memo-items");
+
+            if (!group.items.length) {
+                itemsBox.innerHTML = `<div class="memo-empty-small">이 제목 안에 내용이 없습니다</div>`;
+            } else {
+                group.items.forEach((item) => {
+                    const itemEl = document.createElement("div");
+                    itemEl.className = "memo-item";
+                    itemEl.dataset.itemId = item.id;
+
+                    itemEl.innerHTML = `
+                        <textarea class="text_pole memo-content" rows="4" placeholder="내용">${escapeHtml(item.content || "")}</textarea>
+                        <div class="memo-actions">
+                            <div class="memo-small-btn memo-copy-item">📋 복사</div>
+                            <div class="memo-small-btn memo-delete-item">🗑️ 삭제</div>
+                        </div>
+                    `;
+
+                    const textarea = itemEl.querySelector(".memo-content");
+
+                    textarea.addEventListener("input", () => {
+                        item.content = textarea.value;
+                        persist();
+                    });
+
+                    itemEl.querySelector(".memo-copy-item").addEventListener("click", async () => {
+                        const ok = await copyToClipboard(item.content || "");
+
+                        if (ok) toastr.success("복사됨");
+                        else toastr.error("복사 실패");
+                    });
+
+                    itemEl.querySelector(".memo-delete-item").addEventListener("click", () => {
+                        if (!confirm("이 내용을 삭제할까요?")) return;
+
+                        group.items = group.items.filter(i => i.id !== item.id);
+
+                        persist();
+                        renderMemoGroups();
+                    });
+
+                    itemsBox.appendChild(itemEl);
+                });
+            }
+
+            wrap.appendChild(groupEl);
+        });
+
+        memoPosPopup();
+    }
+
+    function addMemoGroup() {
+        const title = prompt("제목을 입력하세요", "");
+
+        if (!title || !title.trim()) return;
+
+        settings.memoGroups.push({
+            id: uid("group"),
+            title: title.trim(),
+            items: [],
+        });
+
+        persist();
+        renderMemoGroups();
+    }
+
+    // ─── 확장 메뉴 버튼 ───
+
+    const memoMenuBtn = document.createElement("div");
+    memoMenuBtn.id = "memo_menu_btn";
+    memoMenuBtn.className = "list-group-item flex-container flexGap5 interactable";
+    memoMenuBtn.title = "메모";
+    memoMenuBtn.innerHTML = '<i class="fa-solid fa-note-sticky"></i> 메모';
+
+    memoMenuBtn.addEventListener("click", () => {
+        $("#extensionsMenu").hide();
+        openMemoModal();
     });
-}
 
-function addMemoGroup() {
-    const title = askTitle();
+    const extMenu = document.getElementById("extensionsMenu");
 
-    if (!title || !title.trim()) return;
+    if (extMenu) {
+        extMenu.appendChild(memoMenuBtn);
+    } else {
+        const obs = new MutationObserver((_, o) => {
+            const m = document.getElementById("extensionsMenu");
 
-    cfg.memoGroups.push({
-        id: uid('group'),
-        title: title.trim(),
-        items: [],
-    });
+            if (m) {
+                m.appendChild(memoMenuBtn);
+                o.disconnect();
+            }
+        });
 
-    persist();
-    renderMemoBody();
-}
+        obs.observe(document.body, {
+            childList: true,
+            subtree: true,
+        });
+    }
 
-// ─── 시작 ───
-
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot);
-} else {
-    boot();
-}
+    console.log("[Memo Box] 로드 완료");
+});
