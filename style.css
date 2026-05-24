@@ -20,13 +20,13 @@
     width: min(520px, calc(100vw - 20px));
     max-height: min(760px, calc(100dvh - 20px));
 
-    border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.16));
+    border: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.16));
     border-radius: 14px;
 
-    background: var(--SmartThemeBlurTintColor, rgba(20,20,20,0.96));
-    color: var(--SmartThemeBodyColor, #eee);
+    background: var(--SmartThemeBlurTintColor, rgba(255,255,255,0.96));
+    color: var(--SmartThemeBodyColor, #222);
 
-    box-shadow: 0 10px 38px rgba(0,0,0,0.45);
+    box-shadow: 0 10px 38px rgba(0,0,0,0.35);
     overflow: hidden;
 }
 
@@ -40,7 +40,7 @@
     justify-content: space-between;
 
     padding: 10px 12px;
-    border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.12));
+    border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.12));
 
     flex-shrink: 0;
 }
@@ -72,24 +72,53 @@
 }
 
 .memo-group {
-    border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.14));
+    border: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.14));
     border-radius: 10px;
     padding: 10px;
-    background: rgba(255,255,255,0.04);
+
+    background: var(--SmartThemeBlurTintColor, rgba(255,255,255,0.06));
 }
 
-.memo-group-head {
+.memo-group-titlebar {
     display: grid;
-    grid-template-columns: 1fr auto auto;
+    grid-template-columns: auto 1fr;
     gap: 6px;
     align-items: center;
-    margin-bottom: 8px;
+}
+
+.memo-collapse-btn {
+    cursor: pointer;
+
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+
+    border: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.16));
+    border-radius: 8px;
+
+    background: var(--SmartThemeBlurTintColor, rgba(255,255,255,0.08));
+    color: var(--SmartThemeBodyColor, #222);
+
+    font-size: 13px;
 }
 
 .memo-title-input {
     width: 100%;
     font-weight: 700;
     box-sizing: border-box;
+}
+
+.memo-group-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.memo-group-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
 }
 
 .memo-items {
@@ -101,7 +130,9 @@
 .memo-item {
     padding: 8px;
     border-radius: 8px;
-    background: rgba(0,0,0,0.14);
+
+    background: var(--SmartThemeBlurTintColor, rgba(255,255,255,0.04));
+    border: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.10));
 }
 
 .memo-content {
@@ -109,18 +140,22 @@
     min-height: 86px;
     resize: vertical;
     box-sizing: border-box;
+
+    background: var(--SmartThemeBlurTintColor, rgba(255,255,255,0.06)) !important;
+    color: var(--SmartThemeBodyColor, inherit) !important;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.14)) !important;
 }
 
 .memo-actions {
-    display: flex;
-    justify-content: flex-end;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 6px;
     margin-top: 6px;
 }
 
 .memo-footer {
     padding: 10px;
-    border-top: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.12));
+    border-top: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.12));
     flex-shrink: 0;
 }
 
@@ -129,20 +164,21 @@
     cursor: pointer;
     user-select: none;
 
-    border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.16));
+    border: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.16));
     border-radius: 8px;
 
     padding: 5px 9px;
-    background: rgba(255,255,255,0.06);
-    color: var(--SmartThemeBodyColor, #eee);
+    background: var(--SmartThemeBlurTintColor, rgba(255,255,255,0.08));
+    color: var(--SmartThemeBodyColor, #222);
 
     font-size: 13px;
     text-align: center;
 }
 
 .memo-btn:hover,
-.memo-small-btn:hover {
-    background: rgba(255,255,255,0.12);
+.memo-small-btn:hover,
+.memo-collapse-btn:hover {
+    background: rgba(255,255,255,0.16);
 }
 
 .memo-btn-add-title {
@@ -162,17 +198,12 @@
         max-height: calc(100dvh - 12px);
     }
 
-    .memo-group-head {
+    .memo-group-actions {
         grid-template-columns: 1fr;
     }
 
-    .memo-group-head .memo-small-btn {
-        width: 100%;
-        box-sizing: border-box;
-    }
-
     .memo-actions {
-        justify-content: stretch;
+        grid-template-columns: 1fr 1fr;
     }
 
     .memo-actions .memo-small-btn {
