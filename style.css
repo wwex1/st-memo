@@ -4,21 +4,29 @@
     z-index: 99998;
     display: none;
     background: rgba(0, 0, 0, 0.45);
+
+    /* 팝업을 가운데 정렬 */
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+
+    /* 배경 자체가 클릭을 받게 */
+    pointer-events: auto;
 }
 
 #memo-bg.memo-show {
-    display: block;
+    display: flex;
 }
 
 #memo-popup {
-    position: fixed;
-    z-index: 99999;
+    position: relative;
+    z-index: 1;
 
     display: none;
     flex-direction: column;
 
-    width: min(520px, calc(100vw - 20px));
-    max-height: min(760px, calc(100dvh - 20px));
+    width: min(520px, 100%);
+    max-height: min(760px, 100%);
 
     border: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.16));
     border-radius: 14px;
@@ -196,9 +204,8 @@
 }
 
 @media (max-width: 600px) {
-    #memo-popup {
-        width: calc(100vw - 12px);
-        max-height: calc(100dvh - 12px);
+    #memo-bg {
+        padding: 6px;
     }
 
     .memo-group-actions {
