@@ -87,7 +87,8 @@ async function boot() {
 // ─── 확장 메뉴 버튼 ───
 
 function bindMenuButton() {
-    if (document.getElementById('st_memo_box_btn')) return;
+    // 중요: 기존 버튼이 남아있으면 이벤트가 안 붙을 수 있으니 삭제 후 재생성
+    document.getElementById('st_memo_box_btn')?.remove();
 
     const memoBtn = document.createElement('div');
     memoBtn.id = 'st_memo_box_btn';
@@ -95,7 +96,12 @@ function bindMenuButton() {
     memoBtn.title = '메모';
     memoBtn.innerHTML = '<i class="fa-solid fa-note-sticky"></i> 메모';
 
-    memoBtn.addEventListener('click', () => {
+    memoBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        console.log(`[${EXT_NAME}] memo button clicked`);
+
         $('#extensionsMenu').hide();
 
         if (document.getElementById('st-memo-box-block')) {
@@ -109,15 +115,18 @@ function bindMenuButton() {
 
     if (extMenu) {
         extMenu.appendChild(memoBtn);
+        console.log(`[${EXT_NAME}] button appended`);
         return;
     }
 
     const obs = new MutationObserver((_, observer) => {
         const menu = document.getElementById('extensionsMenu');
 
-        if (menu && !document.getElementById('st_memo_box_btn')) {
+        if (menu) {
+            document.getElementById('st_memo_box_btn')?.remove();
             menu.appendChild(memoBtn);
             observer.disconnect();
+            console.log(`[${EXT_NAME}] button appended by observer`);
         }
     });
 
@@ -130,10 +139,12 @@ function bindMenuButton() {
 // ─── 메모 블록 ───
 
 function removeMemoBlock() {
-    $('#st-memo-box-block').remove();
+    document.getElementById('st-memo-box-block')?.remove();
 }
 
 function showMemoBlock() {
+    console.log(`[${EXT_NAME}] showMemoBlock called`);
+
     ensureSettings();
     removeMemoBlock();
 
@@ -161,9 +172,12 @@ function showMemoBlock() {
 
     block.append(body);
 
-    $('body').append(block);
+    // 중요: jQuery body append 대신 DOM으로 확실히 붙임
+    document.body.appendChild(block[0]);
 
     bindMemoEvents(block);
+
+    console.log(`[${EXT_NAME}] memo block appended`, document.getElementById('st-memo-box-block'));
 }
 
 function renderMemoGroup(group) {
@@ -213,7 +227,13 @@ function bindMemoEvents(block) {
     block.find('.stmb-close').on('click', removeMemoBlock);
 
     block.find('.stmb-add-title').on('click', async () => {
-        const title = await ctx.Popup.show.input('제목을 입력하세요', '메모 제목 추가');
+        let title = '';
+
+        try {
+            title = await ctx.Popup.show.input('제목을 입력하세요', '메모 제목 추가');
+        } catch {
+            title = prompt('제목을 입력하세요', '');
+        }
 
         if (!title?.trim()) return;
 
@@ -256,10 +276,16 @@ function bindMemoEvents(block) {
     block.find('.stmb-delete-title').on('click', async function () {
         const groupId = $(this).closest('.stmb-group').data('group-id');
 
-        const ok = await ctx.Popup.show.confirm(
-            '이 제목과 안에 있는 내용을 전부 삭제할까요?',
-            '제목 삭제'
-        );
+        let ok = false;
+
+        try {
+            ok = await ctx.Popup.show.confirm(
+                '이 제목과 안에 있는 내용을 전부 삭제할까요?',
+                '제목 삭제'
+            );
+        } catch {
+            ok = confirm('이 제목과 안에 있는 내용을 전부 삭제할까요?');
+        }
 
         if (!ok) return;
 
@@ -270,55 +296,4 @@ function bindMemoEvents(block) {
     });
 
     block.find('.stmb-content').on('input', function () {
-        const groupId = $(this).closest('.stmb-group').data('group-id');
-        const itemId = $(this).closest('.stmb-item').data('item-id');
-
-        const group = cfg.memoGroups.find(g => g.id === groupId);
-        const item = group?.items?.find(i => i.id === itemId);
-
-        if (!item) return;
-
-        item.content = $(this).val();
-        persist();
-    });
-
-    block.find('.stmb-copy-item').on('click', async function () {
-        const groupId = $(this).closest('.stmb-group').data('group-id');
-        const itemId = $(this).closest('.stmb-item').data('item-id');
-
-        const group = cfg.memoGroups.find(g => g.id === groupId);
-        const item = group?.items?.find(i => i.id === itemId);
-
-        if (!item) return;
-
-        const ok = await copyToClipboard(item.content || '');
-
-        if (ok) toastr.success('복사됨');
-        else toastr.error('복사 실패');
-    });
-
-    block.find('.stmb-delete-item').on('click', async function () {
-        const groupId = $(this).closest('.stmb-group').data('group-id');
-        const itemId = $(this).closest('.stmb-item').data('item-id');
-
-        const group = cfg.memoGroups.find(g => g.id === groupId);
-
-        if (!group) return;
-
-        const ok = await ctx.Popup.show.confirm(
-            '이 내용을 삭제할까요?',
-            '내용 삭제'
-        );
-
-        if (!ok) return;
-
-        group.items = group.items.filter(i => i.id !== itemId);
-
-        persist();
-        showMemoBlock();
-    });
-}
-
-jQuery(async () => {
-    await boot();
-});
+        const groupId = $(this).closest('.stmb-group').
