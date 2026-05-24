@@ -1,6 +1,5 @@
 /**
  * Memo Box for SillyTavern
- * 제목별 메모 저장 / 수정 / 복사 / 삭제
  */
 
 const MODULE_NAME = "st-memo-box";
@@ -14,33 +13,37 @@ jQuery(async () => {
 
     const { getContext } = SillyTavern;
 
+    // ─── 설정 ───
+
     function getSettings() {
         const { extensionSettings } = getContext();
+
         if (!extensionSettings[MODULE_NAME]) {
             extensionSettings[MODULE_NAME] = {};
         }
-        const s = extensionSettings[MODULE_NAME];
-        for (const [k, v] of Object.entries(MEMO_DEFAULTS)) {
-            if (s[k] === undefined) s[k] = JSON.parse(JSON.stringify(v));
-        }
-        if (!Array.isArray(s.memoGroups)) s.memoGroups = [];
 
-        // 마이그레이션: item.title 필드 추가
-        for (const group of s.memoGroups) {
-            if (Array.isArray(group.items)) {
-                for (const item of group.items) {
-                    if (item.title === undefined) item.title = "";
-                }
+        const s = extensionSettings[MODULE_NAME];
+
+        for (const [k, v] of Object.entries(MEMO_DEFAULTS)) {
+            if (s[k] === undefined) {
+                s[k] = JSON.parse(JSON.stringify(v));
             }
+        }
+
+        if (!Array.isArray(s.memoGroups)) {
+            s.memoGroups = [];
         }
 
         return s;
     }
 
-    function persist() { getContext().saveSettingsDebounced(); }
+    function persist() {
+        getContext().saveSettingsDebounced();
+    }
 
     const settings = getSettings();
 
+    // 창 열 때마다 초기화되는 UI 상태
     let collapsedGroups = {};
 
     function uid(prefix) {
@@ -57,28 +60,52 @@ jQuery(async () => {
 
     async function copyToClipboard(text) {
         const value = String(text || "");
+
+        // 1순위: Clipboard API
         if (navigator.clipboard?.writeText) {
-            try { await navigator.clipboard.writeText(value); return true; }
-            catch (e) { console.log(`[${MODULE_NAME}] clipboard API failed:`, e); }
+            try {
+                await navigator.clipboard.writeText(value);
+                return true;
+            } catch (e) {
+                console.log(`[${MODULE_NAME}] clipboard API failed:`, e);
+            }
         }
+
+        // 2순위: textarea + execCommand fallback
         try {
             const ta = document.createElement("textarea");
             ta.value = value;
-            ta.style.cssText = "position:fixed;left:-9999px;top:-9999px;opacity:0;";
+
+            ta.setAttribute("readonly", "");
+            ta.style.position = "fixed";
+            ta.style.left = "-9999px";
+            ta.style.top = "-9999px";
+            ta.style.opacity = "0";
+            ta.style.pointerEvents = "none";
+
             document.body.appendChild(ta);
-            ta.focus(); ta.select();
+
+            ta.focus();
+            ta.select();
+            ta.setSelectionRange(0, ta.value.length);
+
             const ok = document.execCommand("copy");
+
             document.body.removeChild(ta);
+
             if (ok) return true;
-        } catch (e) { console.log(`[${MODULE_NAME}] textarea fallback failed:`, e); }
+        } catch (e) {
+            console.log(`[${MODULE_NAME}] textarea fallback failed:`, e);
+        }
+
         return false;
     }
 
     function autoResizeTextarea(textarea) {
         if (!textarea) return;
+
         textarea.style.height = "auto";
         textarea.style.height = `${textarea.scrollHeight + 2}px`;
-        memoPosPopup();
     }
 
     function autoResizeAllTextareas(root = document) {
@@ -87,77 +114,70 @@ jQuery(async () => {
         });
     }
 
-    // ─── 메모 팝업 DOM (한 번만 생성) ───
+    // ─── 메모 팝업 DOM ───
 
     let memoModalOpen = false;
     let memoBgEl = null;
     let memoPopupEl = null;
 
-    const memoPopupHtml = `
-    <div id="memo-bg"></div>
-    <div id="memo-popup">
-        <div class="memo-header">
-            <span class="memo-title">📝 메모</span>
-            <span class="memo-close" title="닫기">✕</span>
-        </div>
-        <div class="memo-body">
-            <div id="memo-groups"></div>
-        </div>
-        <div class="memo-footer">
-            <div class="memo-btn memo-btn-add-title" id="memo-add-title">+ 그룹 추가</div>
-        </div>
-    </div>`;
+    function ensureMemoDOM() {
+        if (memoBgEl && memoPopupEl) return;
 
-    $("body").append(memoPopupHtml);
+        memoBgEl = document.createElement("div");
+        memoBgEl.id = "memo-bg";
+        document.body.appendChild(memoBgEl);
 
-    memoBgEl = document.getElementById("memo-bg");
-    memoPopupEl = document.getElementById("memo-popup");
+        memoPopupEl = document.createElement("div");
+        memoPopupEl.id = "memo-popup";
 
-    // 배경 클릭 → 닫기
-    memoBgEl.addEventListener("click", closeMemoModal);
-    memoBgEl.addEventListener("touchend", (e) => {
-        e.preventDefault();
-        closeMemoModal();
-    });
+        memoPopupEl.innerHTML = `
+            <div class="memo-header">
+                <span class="memo-title">📝 메모</span>
+                <span class="memo-close" title="닫기">✕</span>
+            </div>
 
-    memoPopupEl.querySelector(".memo-close").addEventListener("click", closeMemoModal);
-    memoPopupEl.querySelector("#memo-add-title").addEventListener("click", addMemoGroup);
+            <div class="memo-body">
+                <div id="memo-groups"></div>
+            </div>
 
-    // ESC
-    document.addEventListener("keydown", (e) => {
-        if (!memoModalOpen) return;
-        if (e.key === "Escape") { e.preventDefault(); closeMemoModal(); }
-    });
+            <div class="memo-footer">
+                <div class="memo-btn memo-btn-add-title" id="memo-add-title">+ 제목 추가</div>
+            </div>
+        `;
 
-    // viewport
-    if (window.visualViewport) {
-        window.visualViewport.addEventListener("resize", () => { if (memoModalOpen) memoPosPopup(); });
-        window.visualViewport.addEventListener("scroll", () => { if (memoModalOpen) memoPosPopup(); });
-    }
+        // 팝업을 배경 안에 넣음 → 배경 클릭 = 팝업 바깥 클릭이 자연스럽게 잡힘
+        memoBgEl.appendChild(memoPopupEl);
 
-    function memoPosPopup() {
-        if (!memoPopupEl) return;
+        // 배경 직접 클릭한 경우만 닫기
+        memoBgEl.addEventListener("click", (e) => {
+            if (e.target === memoBgEl) {
+                closeMemoModal();
+            }
+        });
 
-        const vv = window.visualViewport;
-        const vH = vv ? vv.height : window.innerHeight;
-        const vT = vv ? vv.offsetTop : 0;
-        const vW = vv ? vv.width : window.innerWidth;
+        memoBgEl.addEventListener("touchend", (e) => {
+            if (e.target === memoBgEl) {
+                e.preventDefault();
+                closeMemoModal();
+            }
+        });
 
-        memoPopupEl.style.display = "flex";
-        memoPopupEl.style.visibility = "hidden";
-        memoPopupEl.style.transform = "none";
+        memoPopupEl.querySelector(".memo-close").addEventListener("click", closeMemoModal);
+        memoPopupEl.querySelector("#memo-add-title").addEventListener("click", addMemoGroup);
 
-        const pH = memoPopupEl.offsetHeight;
-        const pW = memoPopupEl.offsetWidth;
-
-        memoPopupEl.style.visibility = "visible";
-
-        memoPopupEl.style.top = (vT + Math.max(10, (vH - pH) / 2)) + "px";
-        memoPopupEl.style.left = Math.max(5, (vW - pW) / 2) + "px";
+        // ESC로 닫기
+        document.addEventListener("keydown", (e) => {
+            if (!memoModalOpen) return;
+            if (e.key === "Escape") {
+                e.preventDefault();
+                closeMemoModal();
+            }
+        });
     }
 
     function resetOpenState() {
         collapsedGroups = {};
+
         for (const group of settings.memoGroups) {
             collapsedGroups[group.id] = true;
         }
@@ -165,29 +185,33 @@ jQuery(async () => {
 
     function openMemoModal() {
         if (memoModalOpen) return;
+
         memoModalOpen = true;
 
+        ensureMemoDOM();
         resetOpenState();
         renderMemoGroups();
 
         memoBgEl.classList.add("memo-show");
         memoPopupEl.classList.add("memo-show");
 
-        memoPosPopup();
-        setTimeout(memoPosPopup, 50);
         setTimeout(() => {
             autoResizeAllTextareas(memoPopupEl);
-            memoPosPopup();
-        }, 100);
+        }, 50);
     }
 
     function closeMemoModal() {
         if (!memoModalOpen) return;
+
         memoModalOpen = false;
 
-        memoBgEl.classList.remove("memo-show");
-        memoPopupEl.classList.remove("memo-show");
-        memoPopupEl.style.display = "none";
+        if (memoBgEl) {
+            memoBgEl.classList.remove("memo-show");
+        }
+
+        if (memoPopupEl) {
+            memoPopupEl.classList.remove("memo-show");
+        }
     }
 
     // ─── 메모 렌더링 ───
@@ -200,7 +224,6 @@ jQuery(async () => {
 
         if (!settings.memoGroups.length) {
             wrap.innerHTML = `<div class="memo-empty">아직 메모가 없습니다</div>`;
-            memoPosPopup();
             return;
         }
 
@@ -222,7 +245,7 @@ jQuery(async () => {
                 <div class="memo-group-content" style="${isCollapsed ? "display:none;" : ""}">
                     <div class="memo-group-actions">
                         <div class="memo-small-btn memo-add-item">내용 추가</div>
-                        <div class="memo-small-btn memo-delete-title">그룹 삭제</div>
+                        <div class="memo-small-btn memo-delete-title">제목 삭제</div>
                     </div>
 
                     <div class="memo-items"></div>
@@ -236,6 +259,7 @@ jQuery(async () => {
 
             function toggleGroup() {
                 const nextCollapsed = !collapsedGroups[group.id];
+
                 if (nextCollapsed) {
                     collapsedGroups[group.id] = true;
                     collapseBtn.textContent = "▶";
@@ -246,10 +270,8 @@ jQuery(async () => {
                     contentEl.style.display = "";
                     setTimeout(() => {
                         autoResizeAllTextareas(groupEl);
-                        memoPosPopup();
                     }, 0);
                 }
-                memoPosPopup();
             }
 
             collapseBtn.addEventListener("click", (e) => {
@@ -263,7 +285,9 @@ jQuery(async () => {
                 toggleGroup();
             });
 
-            titleInput.addEventListener("click", (e) => e.stopPropagation());
+            titleInput.addEventListener("click", (e) => {
+                e.stopPropagation();
+            });
 
             titleInput.addEventListener("input", () => {
                 group.title = titleInput.value;
@@ -272,8 +296,14 @@ jQuery(async () => {
 
             groupEl.querySelector(".memo-add-item").addEventListener("click", () => {
                 const id = uid("item");
-                group.items.push({ id, title: "", content: "" });
+
+                group.items.push({
+                    id,
+                    content: "",
+                });
+
                 delete collapsedGroups[group.id];
+
                 persist();
                 renderMemoGroups();
 
@@ -287,9 +317,12 @@ jQuery(async () => {
             });
 
             groupEl.querySelector(".memo-delete-title").addEventListener("click", () => {
-                if (!confirm("이 그룹과 안에 있는 내용을 전부 삭제할까요?")) return;
+                if (!confirm("이 제목과 안에 있는 내용을 전부 삭제할까요?")) return;
+
                 settings.memoGroups = settings.memoGroups.filter(g => g.id !== group.id);
+
                 delete collapsedGroups[group.id];
+
                 persist();
                 renderMemoGroups();
             });
@@ -297,24 +330,14 @@ jQuery(async () => {
             const itemsBox = groupEl.querySelector(".memo-items");
 
             if (!group.items.length) {
-                itemsBox.innerHTML = `<div class="memo-empty-small">이 그룹 안에 내용이 없습니다</div>`;
+                itemsBox.innerHTML = `<div class="memo-empty-small">이 제목 안에 내용이 없습니다</div>`;
             } else {
                 group.items.forEach((item) => {
                     const itemEl = document.createElement("div");
                     itemEl.className = "memo-item";
                     itemEl.dataset.itemId = item.id;
 
-                    const hasTitle = !!(item.title && item.title.length > 0);
-
                     itemEl.innerHTML = `
-                        <div class="memo-item-title-row" style="${hasTitle ? "" : "display:none;"}">
-                            <input class="text_pole memo-item-title-input" placeholder="내용 제목" value="${escapeHtml(item.title || "")}">
-                        </div>
-
-                        <div class="memo-add-item-title-row" style="${hasTitle ? "display:none;" : ""}">
-                            <span class="memo-add-item-title-link">+ 제목 추가</span>
-                        </div>
-
                         <textarea class="text_pole memo-content" rows="1" placeholder="내용">${escapeHtml(item.content || "")}</textarea>
 
                         <div class="memo-actions">
@@ -323,33 +346,7 @@ jQuery(async () => {
                         </div>
                     `;
 
-                    const titleRow = itemEl.querySelector(".memo-item-title-row");
-                    const titleInputEl = itemEl.querySelector(".memo-item-title-input");
-                    const addTitleRow = itemEl.querySelector(".memo-add-item-title-row");
-                    const addTitleLink = itemEl.querySelector(".memo-add-item-title-link");
                     const textarea = itemEl.querySelector(".memo-content");
-
-                    addTitleLink.addEventListener("click", () => {
-                        addTitleRow.style.display = "none";
-                        titleRow.style.display = "";
-                        titleInputEl.focus();
-                        memoPosPopup();
-                    });
-
-                    titleInputEl.addEventListener("input", () => {
-                        item.title = titleInputEl.value;
-                        persist();
-                    });
-
-                    titleInputEl.addEventListener("blur", () => {
-                        if (!titleInputEl.value.trim()) {
-                            item.title = "";
-                            persist();
-                            titleRow.style.display = "none";
-                            addTitleRow.style.display = "";
-                            memoPosPopup();
-                        }
-                    });
 
                     textarea.addEventListener("input", () => {
                         item.content = textarea.value;
@@ -364,20 +361,25 @@ jQuery(async () => {
                     itemEl.querySelector(".memo-copy-item").addEventListener("click", async () => {
                         const currentText = textarea ? textarea.value : (item.content || "");
                         const ok = await copyToClipboard(currentText);
+
                         if (ok) toastr.success("복사됨");
                         else toastr.error("복사 실패");
                     });
 
                     itemEl.querySelector(".memo-delete-item").addEventListener("click", () => {
                         if (!confirm("이 내용을 삭제할까요?")) return;
+
                         group.items = group.items.filter(i => i.id !== item.id);
+
                         persist();
                         renderMemoGroups();
                     });
 
                     itemsBox.appendChild(itemEl);
 
-                    setTimeout(() => autoResizeTextarea(textarea), 0);
+                    setTimeout(() => {
+                        autoResizeTextarea(textarea);
+                    }, 0);
                 });
             }
 
@@ -386,21 +388,25 @@ jQuery(async () => {
 
         setTimeout(() => {
             autoResizeAllTextareas(wrap);
-            memoPosPopup();
         }, 0);
     }
 
     function addMemoGroup() {
-        const title = prompt("그룹 이름을 입력하세요", "");
+        const title = prompt("제목을 입력하세요", "");
+
         if (!title || !title.trim()) return;
 
         const id = uid("group");
+
         settings.memoGroups.push({
             id,
             title: title.trim(),
             items: [],
         });
+
+        // 새 제목은 바로 열림
         delete collapsedGroups[id];
+
         persist();
         renderMemoGroups();
     }
@@ -421,18 +427,24 @@ jQuery(async () => {
     });
 
     const extMenu = document.getElementById("extensionsMenu");
+
     if (extMenu) {
         extMenu.appendChild(memoMenuBtn);
     } else {
         const obs = new MutationObserver((_, o) => {
             const m = document.getElementById("extensionsMenu");
+
             if (m) {
                 document.getElementById("memo_menu_btn")?.remove();
                 m.appendChild(memoMenuBtn);
                 o.disconnect();
             }
         });
-        obs.observe(document.body, { childList: true, subtree: true });
+
+        obs.observe(document.body, {
+            childList: true,
+            subtree: true,
+        });
     }
 
     console.log("[Memo Box] 로드 완료");
