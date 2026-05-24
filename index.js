@@ -1,10 +1,11 @@
-/* Memo Box for SillyTavern */
+/**
+ * Memo Box for SillyTavern
+ */
 
 const MODULE_NAME = "st-memo-box";
 
 const MEMO_DEFAULTS = {
     memoGroups: [],
-    collapsedGroups: {},
 };
 
 jQuery(async () => {
@@ -33,10 +34,6 @@ jQuery(async () => {
             s.memoGroups = [];
         }
 
-        if (!s.collapsedGroups || typeof s.collapsedGroups !== "object") {
-            s.collapsedGroups = {};
-        }
-
         return s;
     }
 
@@ -45,6 +42,10 @@ jQuery(async () => {
     }
 
     const settings = getSettings();
+
+    // 창 열 때마다 초기화되는 UI 상태
+    let collapsedGroups = {};
+    let editingItems = {};
 
     function uid(prefix) {
         return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -56,6 +57,11 @@ jQuery(async () => {
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;");
+    }
+
+    function getPreviewText(text = "") {
+        const cleaned = String(text).replace(/\s+/g, " ").trim();
+        return cleaned || "내용";
     }
 
     async function copyToClipboard(text) {
@@ -161,12 +167,22 @@ jQuery(async () => {
         memoPopupEl.style.left = Math.max(5, (vW - pW) / 2) + "px";
     }
 
+    function resetOpenState() {
+        collapsedGroups = {};
+        editingItems = {};
+
+        for (const group of settings.memoGroups) {
+            collapsedGroups[group.id] = true;
+        }
+    }
+
     function openMemoModal() {
         if (memoModalOpen) return;
 
         memoModalOpen = true;
 
         ensureMemoDOM();
+        resetOpenState();
         renderMemoGroups();
 
         memoBgEl.classList.add("memo-show");
@@ -208,7 +224,7 @@ jQuery(async () => {
         settings.memoGroups.forEach((group) => {
             if (!Array.isArray(group.items)) group.items = [];
 
-            const isCollapsed = !!settings.collapsedGroups[group.id];
+            const isCollapsed = !!collapsedGroups[group.id];
 
             const groupEl = document.createElement("div");
             groupEl.className = "memo-group";
@@ -236,19 +252,18 @@ jQuery(async () => {
             const contentEl = groupEl.querySelector(".memo-group-content");
 
             function toggleGroup() {
-                const nextCollapsed = !settings.collapsedGroups[group.id];
+                const nextCollapsed = !collapsedGroups[group.id];
 
                 if (nextCollapsed) {
-                    settings.collapsedGroups[group.id] = true;
+                    collapsedGroups[group.id] = true;
                     collapseBtn.textContent = "▶";
                     contentEl.style.display = "none";
                 } else {
-                    delete settings.collapsedGroups[group.id];
+                    delete collapsedGroups[group.id];
                     collapseBtn.textContent = "▼";
                     contentEl.style.display = "";
                 }
 
-                persist();
                 memoPosPopup();
             }
 
@@ -273,12 +288,15 @@ jQuery(async () => {
             });
 
             groupEl.querySelector(".memo-add-item").addEventListener("click", () => {
+                const id = uid("item");
+
                 group.items.push({
-                    id: uid("item"),
+                    id,
                     content: "",
                 });
 
-                delete settings.collapsedGroups[group.id];
+                delete collapsedGroups[group.id];
+                editingItems[id] = true;
 
                 persist();
                 renderMemoGroups();
@@ -288,7 +306,12 @@ jQuery(async () => {
                 if (!confirm("이 제목과 안에 있는 내용을 전부 삭제할까요?")) return;
 
                 settings.memoGroups = settings.memoGroups.filter(g => g.id !== group.id);
-                delete settings.collapsedGroups[group.id];
+
+                delete collapsedGroups[group.id];
+
+                for (const item of group.items) {
+                    delete editingItems[item.id];
+                }
 
                 persist();
                 renderMemoGroups();
@@ -300,37 +323,72 @@ jQuery(async () => {
                 itemsBox.innerHTML = `<div class="memo-empty-small">이 제목 안에 내용이 없습니다</div>`;
             } else {
                 group.items.forEach((item) => {
+                    const isEditing = !!editingItems[item.id];
+
                     const itemEl = document.createElement("div");
                     itemEl.className = "memo-item";
                     itemEl.dataset.itemId = item.id;
 
                     itemEl.innerHTML = `
-                        <textarea class="text_pole memo-content" rows="4" placeholder="내용">${escapeHtml(item.content || "")}</textarea>
+                        <div class="memo-item-row">
+                            <div class="memo-preview" title="눌러서 수정">${escapeHtml(getPreviewText(item.content))}</div>
+                            <div class="memo-row-actions">
+                                <div class="memo-mini-btn memo-copy-item" title="복사">📋</div>
+                                <div class="memo-mini-btn memo-delete-item" title="삭제">🗑️</div>
+                            </div>
+                        </div>
 
-                        <div class="memo-actions">
-                            <div class="memo-small-btn memo-copy-item">📋 복사</div>
-                            <div class="memo-small-btn memo-delete-item">🗑️ 삭제</div>
+                        <div class="memo-editor-wrap" style="${isEditing ? "" : "display:none;"}">
+                            <textarea class="text_pole memo-content" rows="4" placeholder="내용">${escapeHtml(item.content || "")}</textarea>
+                            <div class="memo-editor-actions">
+                                <div class="memo-small-btn memo-close-editor">접기</div>
+                            </div>
                         </div>
                     `;
 
+                    const preview = itemEl.querySelector(".memo-preview");
+                    const editorWrap = itemEl.querySelector(".memo-editor-wrap");
                     const textarea = itemEl.querySelector(".memo-content");
+
+                    preview.addEventListener("click", () => {
+                        editingItems[item.id] = true;
+                        editorWrap.style.display = "";
+                        memoPosPopup();
+
+                        setTimeout(() => {
+                            textarea.focus();
+                            textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+                        }, 0);
+                    });
 
                     textarea.addEventListener("input", () => {
                         item.content = textarea.value;
+                        preview.textContent = getPreviewText(item.content);
                         persist();
                     });
 
-                    itemEl.querySelector(".memo-copy-item").addEventListener("click", async () => {
+                    itemEl.querySelector(".memo-close-editor").addEventListener("click", () => {
+                        delete editingItems[item.id];
+                        editorWrap.style.display = "none";
+                        memoPosPopup();
+                    });
+
+                    itemEl.querySelector(".memo-copy-item").addEventListener("click", async (e) => {
+                        e.stopPropagation();
+
                         const ok = await copyToClipboard(item.content || "");
 
                         if (ok) toastr.success("복사됨");
                         else toastr.error("복사 실패");
                     });
 
-                    itemEl.querySelector(".memo-delete-item").addEventListener("click", () => {
+                    itemEl.querySelector(".memo-delete-item").addEventListener("click", (e) => {
+                        e.stopPropagation();
+
                         if (!confirm("이 내용을 삭제할까요?")) return;
 
                         group.items = group.items.filter(i => i.id !== item.id);
+                        delete editingItems[item.id];
 
                         persist();
                         renderMemoGroups();
@@ -359,7 +417,8 @@ jQuery(async () => {
             items: [],
         });
 
-        delete settings.collapsedGroups[id];
+        // 새로 만든 제목은 바로 열어둠
+        delete collapsedGroups[id];
 
         persist();
         renderMemoGroups();
