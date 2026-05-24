@@ -2,6 +2,7 @@
  * Memo Box for SillyTavern
  * 제목별 메모 저장 / 수정 / 복사 / 삭제
  * 버튼 위치: #extensionsMenu
+ * 메모창 위치: 플로팅
  */
 
 const EXT_NAME = 'st-MemoBox';
@@ -96,7 +97,12 @@ function bindMenuButton() {
 
     memoBtn.addEventListener('click', () => {
         $('#extensionsMenu').hide();
-        showMemoBlock();
+
+        if (document.getElementById('st-memo-box-block')) {
+            removeMemoBlock();
+        } else {
+            showMemoBlock();
+        }
     });
 
     const extMenu = document.getElementById('extensionsMenu');
@@ -127,11 +133,6 @@ function removeMemoBlock() {
     $('#st-memo-box-block').remove();
 }
 
-function scrollToMemoBlock() {
-    const el = document.getElementById('st-memo-box-block');
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'end' });
-}
-
 function showMemoBlock() {
     ensureSettings();
     removeMemoBlock();
@@ -160,10 +161,9 @@ function showMemoBlock() {
 
     block.append(body);
 
-    $('#chat').append(block);
+    $('body').append(block);
 
     bindMemoEvents(block);
-    scrollToMemoBlock();
 }
 
 function renderMemoGroup(group) {
