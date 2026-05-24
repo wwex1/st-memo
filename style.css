@@ -1,19 +1,16 @@
 #memo-bg {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    height: 100dvh;
+    inset: 0;
     z-index: 99998;
     display: none;
     background: rgba(0, 0, 0, 0.45);
 
+    /* 팝업을 가운데 정렬 */
     align-items: center;
     justify-content: center;
     padding: 10px;
-    box-sizing: border-box;
 
+    /* 배경 자체가 클릭을 받게 */
     pointer-events: auto;
 }
 
@@ -29,9 +26,7 @@
     flex-direction: column;
 
     width: min(520px, 100%);
-    max-height: 100%;
-
-    margin: auto;
+    max-height: min(760px, 100%);
 
     border: 1px solid var(--SmartThemeBorderColor, rgba(0,0,0,0.16));
     border-radius: 14px;
@@ -76,8 +71,6 @@
 .memo-body {
     padding: 10px;
     overflow-y: auto;
-    flex: 1 1 auto;
-    min-height: 0;
 }
 
 #memo-groups {
