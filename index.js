@@ -15,13 +15,11 @@ let ctx = null;
 let cfg = {};
 
 function persist() {
-    ctx.saveSettingsDebounced();
-}
-
-function esc(str = '') {
-    const d = document.createElement('span');
-    d.textContent = String(str);
-    return d.innerHTML;
+    try {
+        ctx.saveSettingsDebounced();
+    } catch (e) {
+        console.log(`[${EXT_NAME}] save failed`, e);
+    }
 }
 
 function uid(prefix) {
@@ -30,270 +28,330 @@ function uid(prefix) {
 
 function ensureSettings() {
     if (!ctx.extensionSettings[EXT_NAME]) {
-        ctx.extensionSettings[EXT_NAME] = structuredClone(DEFAULTS);
+        ctx.extensionSettings[EXT_NAME] = JSON.parse(JSON.stringify(DEFAULTS));
     }
 
     cfg = ctx.extensionSettings[EXT_NAME];
-
-    for (const [key, value] of Object.entries(DEFAULTS)) {
-        if (cfg[key] === undefined) cfg[key] = structuredClone(value);
-    }
 
     if (!Array.isArray(cfg.memoGroups)) {
         cfg.memoGroups = [];
     }
 }
 
+function toastSuccess(text) {
+    if (window.toastr) toastr.success(text);
+    else console.log(text);
+}
+
+function toastError(text) {
+    if (window.toastr) toastr.error(text);
+    else console.error(text);
+}
+
 async function copyToClipboard(text) {
-    if (navigator.clipboard?.writeText) {
-        try {
+    try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
             await navigator.clipboard.writeText(text);
             return true;
-        } catch (e) {
-            console.log(`[${EXT_NAME}] clipboard API failed:`, e);
         }
-    }
+    } catch {}
 
     try {
         const ta = document.createElement('textarea');
         ta.value = text;
-        ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;';
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        ta.style.top = '-9999px';
         document.body.appendChild(ta);
         ta.focus();
         ta.select();
 
         const ok = document.execCommand('copy');
-        document.body.removeChild(ta);
+        ta.remove();
 
         return ok;
-    } catch (e) {
-        console.log(`[${EXT_NAME}] textarea copy fallback failed:`, e);
+    } catch {
         return false;
     }
 }
 
-// ─── 부팅 ───
-
-async function boot() {
-    console.log(`[${EXT_NAME}] Booting...`);
-
-    ctx = SillyTavern.getContext();
-    ensureSettings();
-    bindMenuButton();
-
-    console.log(`[${EXT_NAME}] Ready.`);
+function askTitle() {
+    return prompt('제목을 입력하세요', '');
 }
 
-// ─── 확장 메뉴 버튼 ───
+function askConfirm(text) {
+    return confirm(text);
+}
 
-function bindMenuButton() {
-    // 중요: 기존 버튼이 남아있으면 이벤트가 안 붙을 수 있으니 삭제 후 재생성
-    document.getElementById('st_memo_box_btn')?.remove();
+// ─── 부팅 ───
 
-    const memoBtn = document.createElement('div');
-    memoBtn.id = 'st_memo_box_btn';
-    memoBtn.className = 'list-group-item flex-container flexGap5 interactable';
-    memoBtn.title = '메모';
-    memoBtn.innerHTML = '<i class="fa-solid fa-note-sticky"></i> 메모';
+function boot() {
+    try {
+        console.log(`[${EXT_NAME}] boot`);
 
-    memoBtn.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
+        ctx = SillyTavern.getContext();
+        ensureSettings();
 
-        console.log(`[${EXT_NAME}] memo button clicked`);
+        attachMenuButton();
 
-        $('#extensionsMenu').hide();
+        console.log(`[${EXT_NAME}] ready`);
+    } catch (e) {
+        console.error(`[${EXT_NAME}] boot failed`, e);
+    }
+}
 
-        if (document.getElementById('st-memo-box-block')) {
-            removeMemoBlock();
-        } else {
-            showMemoBlock();
-        }
-    });
+// ─── 메뉴 버튼 ───
 
-    const extMenu = document.getElementById('extensionsMenu');
+function attachMenuButton() {
+    const old = document.getElementById('st_memo_box_btn');
+    if (old) old.remove();
 
-    if (extMenu) {
-        extMenu.appendChild(memoBtn);
-        console.log(`[${EXT_NAME}] button appended`);
+    const btn = document.createElement('div');
+    btn.id = 'st_memo_box_btn';
+    btn.className = 'list-group-item flex-container flexGap5 interactable';
+    btn.title = '메모';
+    btn.innerHTML = '<i class="fa-solid fa-note-sticky"></i> 메모';
+
+    btn.onclick = function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        console.log(`[${EXT_NAME}] clicked`);
+
+        const menu = document.getElementById('extensionsMenu');
+        if (menu) menu.style.display = 'none';
+
+        toggleMemoBlock();
+    };
+
+    const menuNow = document.getElementById('extensionsMenu');
+
+    if (menuNow) {
+        menuNow.appendChild(btn);
         return;
     }
 
-    const obs = new MutationObserver((_, observer) => {
+    const observer = new MutationObserver(() => {
         const menu = document.getElementById('extensionsMenu');
+        if (!menu) return;
 
-        if (menu) {
-            document.getElementById('st_memo_box_btn')?.remove();
-            menu.appendChild(memoBtn);
-            observer.disconnect();
-            console.log(`[${EXT_NAME}] button appended by observer`);
+        if (!document.getElementById('st_memo_box_btn')) {
+            menu.appendChild(btn);
         }
+
+        observer.disconnect();
     });
 
-    obs.observe(document.body, {
+    observer.observe(document.body, {
         childList: true,
         subtree: true,
     });
 }
 
-// ─── 메모 블록 ───
+// ─── 메모창 ───
+
+function toggleMemoBlock() {
+    const existing = document.getElementById('st-memo-box-block');
+
+    if (existing) {
+        existing.remove();
+        return;
+    }
+
+    showMemoBlock();
+}
 
 function removeMemoBlock() {
-    document.getElementById('st-memo-box-block')?.remove();
+    const existing = document.getElementById('st-memo-box-block');
+    if (existing) existing.remove();
 }
 
 function showMemoBlock() {
-    console.log(`[${EXT_NAME}] showMemoBlock called`);
+    try {
+        console.log(`[${EXT_NAME}] showMemoBlock`);
 
-    ensureSettings();
-    removeMemoBlock();
+        ensureSettings();
+        removeMemoBlock();
 
-    const block = $('<div id="st-memo-box-block" class="stmb-block"></div>');
+        const block = document.createElement('div');
+        block.id = 'st-memo-box-block';
+        block.className = 'stmb-block';
 
-    const head = $('<div class="stmb-block-head"></div>');
-    head.append('<span class="stmb-block-title">📝 메모</span>');
+        block.innerHTML = `
+            <div class="stmb-block-head">
+                <span class="stmb-block-title">📝 메모</span>
+                <div class="stmb-block-btns">
+                    <button class="stmb-block-btn" id="stmb-add-title" type="button" title="제목 추가">＋</button>
+                    <button class="stmb-block-btn" id="stmb-close" type="button" title="닫기">✕</button>
+                </div>
+            </div>
+            <div class="stmb-body" id="stmb-body"></div>
+        `;
 
-    const btns = $('<div class="stmb-block-btns"></div>');
-    btns.append('<button class="stmb-block-btn stmb-add-title" title="제목 추가">＋</button>');
-    btns.append('<button class="stmb-block-btn stmb-close" title="닫기">✕</button>');
+        document.body.appendChild(block);
 
-    head.append(btns);
-    block.append(head);
+        document.getElementById('stmb-close').onclick = removeMemoBlock;
+        document.getElementById('stmb-add-title').onclick = addMemoGroup;
 
-    const body = $('<div class="stmb-body"></div>');
+        renderMemoBody();
+
+        console.log(`[${EXT_NAME}] block appended`);
+    } catch (e) {
+        console.error(`[${EXT_NAME}] showMemoBlock failed`, e);
+        alert(`메모창 생성 실패: ${e.message}`);
+    }
+}
+
+function renderMemoBody() {
+    const body = document.getElementById('stmb-body');
+    if (!body) return;
+
+    body.innerHTML = '';
 
     if (!cfg.memoGroups.length) {
-        body.append('<div class="stmb-empty">아직 메모가 없습니다</div>');
-    } else {
-        cfg.memoGroups.forEach(group => {
-            body.append(renderMemoGroup(group));
-        });
+        const empty = document.createElement('div');
+        empty.className = 'stmb-empty';
+        empty.textContent = '아직 메모가 없습니다';
+        body.appendChild(empty);
+        return;
     }
 
-    block.append(body);
-
-    // 중요: jQuery body append 대신 DOM으로 확실히 붙임
-    document.body.appendChild(block[0]);
-
-    bindMemoEvents(block);
-
-    console.log(`[${EXT_NAME}] memo block appended`, document.getElementById('st-memo-box-block'));
-}
-
-function renderMemoGroup(group) {
-    if (!Array.isArray(group.items)) group.items = [];
-
-    const groupEl = $(`
-        <div class="stmb-group" data-group-id="${esc(group.id)}">
-            <div class="stmb-group-head">
-                <input class="text_pole stmb-title-input" value="${esc(group.title || '')}" placeholder="제목">
-                <button class="stmb-act stmb-add-item">내용 추가</button>
-                <button class="stmb-act stmb-delete-title">제목 삭제</button>
-            </div>
-
-            <div class="stmb-items"></div>
-        </div>
-    `);
-
-    const itemsBox = groupEl.find('.stmb-items');
-
-    if (!group.items.length) {
-        itemsBox.append('<div class="stmb-empty-small">이 제목 안에 내용이 없습니다</div>');
-    } else {
-        group.items.forEach(item => {
-            itemsBox.append(renderMemoItem(item));
-        });
-    }
-
-    return groupEl;
-}
-
-function renderMemoItem(item) {
-    return $(`
-        <div class="stmb-item" data-item-id="${esc(item.id)}">
-            <textarea class="text_pole stmb-content" rows="4" placeholder="내용">${esc(item.content || '')}</textarea>
-
-            <div class="stmb-actions">
-                <button class="stmb-act stmb-copy-item">📋 복사</button>
-                <button class="stmb-act stmb-delete-item">🗑️ 삭제</button>
-            </div>
-        </div>
-    `);
-}
-
-// ─── 메모 이벤트 ───
-
-function bindMemoEvents(block) {
-    block.find('.stmb-close').on('click', removeMemoBlock);
-
-    block.find('.stmb-add-title').on('click', async () => {
-        let title = '';
-
-        try {
-            title = await ctx.Popup.show.input('제목을 입력하세요', '메모 제목 추가');
-        } catch {
-            title = prompt('제목을 입력하세요', '');
-        }
-
-        if (!title?.trim()) return;
-
-        cfg.memoGroups.push({
-            id: uid('group'),
-            title: title.trim(),
-            items: [],
-        });
-
-        persist();
-        showMemoBlock();
-    });
-
-    block.find('.stmb-title-input').on('input', function () {
-        const groupId = $(this).closest('.stmb-group').data('group-id');
-        const group = cfg.memoGroups.find(g => g.id === groupId);
-
-        if (!group) return;
-
-        group.title = $(this).val();
-        persist();
-    });
-
-    block.find('.stmb-add-item').on('click', function () {
-        const groupId = $(this).closest('.stmb-group').data('group-id');
-        const group = cfg.memoGroups.find(g => g.id === groupId);
-
-        if (!group) return;
+    cfg.memoGroups.forEach(group => {
         if (!Array.isArray(group.items)) group.items = [];
 
-        group.items.push({
-            id: uid('item'),
-            content: '',
-        });
+        const groupEl = document.createElement('div');
+        groupEl.className = 'stmb-group';
+        groupEl.dataset.groupId = group.id;
 
-        persist();
-        showMemoBlock();
-    });
+        const head = document.createElement('div');
+        head.className = 'stmb-group-head';
 
-    block.find('.stmb-delete-title').on('click', async function () {
-        const groupId = $(this).closest('.stmb-group').data('group-id');
+        const titleInput = document.createElement('input');
+        titleInput.className = 'text_pole stmb-title-input';
+        titleInput.placeholder = '제목';
+        titleInput.value = group.title || '';
+        titleInput.oninput = function () {
+            group.title = titleInput.value;
+            persist();
+        };
 
-        let ok = false;
+        const addItemBtn = document.createElement('button');
+        addItemBtn.className = 'stmb-act';
+        addItemBtn.type = 'button';
+        addItemBtn.textContent = '내용 추가';
+        addItemBtn.onclick = function () {
+            group.items.push({
+                id: uid('item'),
+                content: '',
+            });
 
-        try {
-            ok = await ctx.Popup.show.confirm(
-                '이 제목과 안에 있는 내용을 전부 삭제할까요?',
-                '제목 삭제'
-            );
-        } catch {
-            ok = confirm('이 제목과 안에 있는 내용을 전부 삭제할까요?');
+            persist();
+            renderMemoBody();
+        };
+
+        const deleteGroupBtn = document.createElement('button');
+        deleteGroupBtn.className = 'stmb-act';
+        deleteGroupBtn.type = 'button';
+        deleteGroupBtn.textContent = '제목 삭제';
+        deleteGroupBtn.onclick = function () {
+            if (!askConfirm('이 제목과 안에 있는 내용을 전부 삭제할까요?')) return;
+
+            cfg.memoGroups = cfg.memoGroups.filter(g => g.id !== group.id);
+
+            persist();
+            renderMemoBody();
+        };
+
+        head.appendChild(titleInput);
+        head.appendChild(addItemBtn);
+        head.appendChild(deleteGroupBtn);
+
+        const itemsBox = document.createElement('div');
+        itemsBox.className = 'stmb-items';
+
+        if (!group.items.length) {
+            const empty = document.createElement('div');
+            empty.className = 'stmb-empty-small';
+            empty.textContent = '이 제목 안에 내용이 없습니다';
+            itemsBox.appendChild(empty);
+        } else {
+            group.items.forEach(item => {
+                const itemEl = document.createElement('div');
+                itemEl.className = 'stmb-item';
+                itemEl.dataset.itemId = item.id;
+
+                const textarea = document.createElement('textarea');
+                textarea.className = 'text_pole stmb-content';
+                textarea.rows = 4;
+                textarea.placeholder = '내용';
+                textarea.value = item.content || '';
+                textarea.oninput = function () {
+                    item.content = textarea.value;
+                    persist();
+                };
+
+                const actions = document.createElement('div');
+                actions.className = 'stmb-actions';
+
+                const copyBtn = document.createElement('button');
+                copyBtn.className = 'stmb-act';
+                copyBtn.type = 'button';
+                copyBtn.textContent = '📋 복사';
+                copyBtn.onclick = async function () {
+                    const ok = await copyToClipboard(item.content || '');
+                    if (ok) toastSuccess('복사됨');
+                    else toastError('복사 실패');
+                };
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'stmb-act';
+                deleteBtn.type = 'button';
+                deleteBtn.textContent = '🗑️ 삭제';
+                deleteBtn.onclick = function () {
+                    if (!askConfirm('이 내용을 삭제할까요?')) return;
+
+                    group.items = group.items.filter(i => i.id !== item.id);
+
+                    persist();
+                    renderMemoBody();
+                };
+
+                actions.appendChild(copyBtn);
+                actions.appendChild(deleteBtn);
+
+                itemEl.appendChild(textarea);
+                itemEl.appendChild(actions);
+
+                itemsBox.appendChild(itemEl);
+            });
         }
 
-        if (!ok) return;
+        groupEl.appendChild(head);
+        groupEl.appendChild(itemsBox);
 
-        cfg.memoGroups = cfg.memoGroups.filter(g => g.id !== groupId);
+        body.appendChild(groupEl);
+    });
+}
 
-        persist();
-        showMemoBlock();
+function addMemoGroup() {
+    const title = askTitle();
+
+    if (!title || !title.trim()) return;
+
+    cfg.memoGroups.push({
+        id: uid('group'),
+        title: title.trim(),
+        items: [],
     });
 
-    block.find('.stmb-content').on('input', function () {
-        const groupId = $(this).closest('.stmb-group').
+    persist();
+    renderMemoBody();
+}
+
+// ─── 시작 ───
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+} else {
+    boot();
+}
