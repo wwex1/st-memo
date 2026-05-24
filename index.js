@@ -149,14 +149,39 @@ jQuery(async () => {
 
         document.body.appendChild(memoPopupEl);
 
-        memoBgEl.addEventListener("click", closeMemoModal);
+        // 배경 클릭하면 닫기
+        memoBgEl.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            closeMemoModal();
+        });
+
         memoBgEl.addEventListener("touchend", (e) => {
             e.preventDefault();
+            e.stopPropagation();
             closeMemoModal();
+        });
+
+        // 팝업 내부 클릭은 배경 클릭으로 전달되지 않게 막기
+        memoPopupEl.addEventListener("click", (e) => {
+            e.stopPropagation();
+        });
+
+        memoPopupEl.addEventListener("touchend", (e) => {
+            e.stopPropagation();
         });
 
         memoPopupEl.querySelector(".memo-close").addEventListener("click", closeMemoModal);
         memoPopupEl.querySelector("#memo-add-title").addEventListener("click", addMemoGroup);
+
+        // ESC로 닫기
+        document.addEventListener("keydown", (e) => {
+            if (!memoModalOpen) return;
+            if (e.key === "Escape") {
+                e.preventDefault();
+                closeMemoModal();
+            }
+        });
 
         if (window.visualViewport) {
             window.visualViewport.addEventListener("resize", () => {
