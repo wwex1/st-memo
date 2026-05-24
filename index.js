@@ -59,24 +59,38 @@ jQuery(async () => {
     }
 
     async function copyToClipboard(text) {
+        const value = String(text || "");
+
+        // 1순위: Clipboard API
         if (navigator.clipboard?.writeText) {
             try {
-                await navigator.clipboard.writeText(text);
+                await navigator.clipboard.writeText(value);
                 return true;
             } catch (e) {
                 console.log(`[${MODULE_NAME}] clipboard API failed:`, e);
             }
         }
 
+        // 2순위: textarea + execCommand fallback
         try {
             const ta = document.createElement("textarea");
-            ta.value = text;
-            ta.style.cssText = "position:fixed;left:-9999px;top:-9999px;opacity:0;";
+            ta.value = value;
+
+            ta.setAttribute("readonly", "");
+            ta.style.position = "fixed";
+            ta.style.left = "-9999px";
+            ta.style.top = "-9999px";
+            ta.style.opacity = "0";
+            ta.style.pointerEvents = "none";
+
             document.body.appendChild(ta);
+
             ta.focus();
             ta.select();
+            ta.setSelectionRange(0, ta.value.length);
 
             const ok = document.execCommand("copy");
+
             document.body.removeChild(ta);
 
             if (ok) return true;
@@ -367,7 +381,8 @@ jQuery(async () => {
                     });
 
                     itemEl.querySelector(".memo-copy-item").addEventListener("click", async () => {
-                        const ok = await copyToClipboard(item.content || "");
+                        const currentText = textarea ? textarea.value : (item.content || "");
+                        const ok = await copyToClipboard(currentText);
 
                         if (ok) toastr.success("복사됨");
                         else toastr.error("복사 실패");
