@@ -319,6 +319,10 @@ jQuery(async () => {
                     </div>
 
                     <div class="memo-items"></div>
+
+                    <div class="memo-group-actions-bottom">
+                        <div class="memo-small-btn memo-add-item-bottom">+ 내용 추가</div>
+                    </div>
                 </div>
             `;
 
@@ -368,7 +372,8 @@ jQuery(async () => {
                 persist();
             });
 
-            groupEl.querySelector(".memo-add-item").addEventListener("click", (e) => {
+            // 내용 추가 핸들러 (상단/하단 버튼 공용)
+            const addItemHandler = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
 
@@ -386,7 +391,10 @@ jQuery(async () => {
                         autoResizeTextarea(newTextarea);
                     }
                 }, 0);
-            });
+            };
+
+            groupEl.querySelector(".memo-add-item").addEventListener("click", addItemHandler);
+            groupEl.querySelector(".memo-add-item-bottom").addEventListener("click", addItemHandler);
 
             groupEl.querySelector(".memo-delete-title").addEventListener("click", (e) => {
                 e.preventDefault();
