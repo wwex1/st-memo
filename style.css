@@ -188,6 +188,15 @@
     gap: 6px;
 }
 
+/* ─── 그룹 하단 내용 추가 버튼 ─── */
+.memo-group-actions-bottom {
+    margin-top: 2px;
+}
+
+.memo-add-item-bottom {
+    width: 100%;
+}
+
 /* ─── 푸터 ─── */
 .memo-footer {
     padding: 10px;
