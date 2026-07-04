@@ -106,9 +106,6 @@ jQuery(async () => {
     // ─── 메모 팝업 DOM ───
 
     let memoModalOpen = false;
-    let memoJustOpened = false;
-    let memoJustClosed = false;
-    let memoClosingNow = false;
 
     let memoBgEl = null;
     let memoPopupEl = null;
@@ -136,55 +133,13 @@ jQuery(async () => {
     memoBgEl = document.getElementById("memo-bg");
     memoPopupEl = document.getElementById("memo-popup");
 
-    // ─── 닫기 처리 ───
-
-    function requestCloseMemoModal(e) {
-        if (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation?.();
-        }
-
-        if (memoClosingNow) return;
-
-        memoClosingNow = true;
-        closeMemoModal();
-
-        setTimeout(() => {
-            memoClosingNow = false;
-        }, 350);
-    }
+    // ─── 닫기 처리 (X 버튼만) ───
 
     const closeBtn = memoPopupEl.querySelector(".memo-close");
-
-    closeBtn.addEventListener("pointerdown", requestCloseMemoModal, { passive: false });
-    closeBtn.addEventListener("click", requestCloseMemoModal, { passive: false });
-
-    // ★ 닫은 직후 같은 좌표에서 발화되는 후속 이벤트들이 뒤쪽 ST 요소에 닿는 것 차단 ★
-    // pointerdown으로 X를 처리하면 뒤따라오는 pointerup/mouseup/touchend/click이 뒤의 요소로 가버림.
-    // memoJustClosed 동안 이걸 전부 캡처 단계에서 흡수.
-    const swallowAfterClose = (e) => {
-        if (memoJustClosed) {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation?.();
-        }
-    };
-
-    document.addEventListener("click", swallowAfterClose, true);
-    document.addEventListener("touchend", swallowAfterClose, true);
-    document.addEventListener("mouseup", swallowAfterClose, true);
-    document.addEventListener("pointerup", swallowAfterClose, true);
-
-    // 배경 클릭 / 팝업 바깥 클릭 닫기
-    document.addEventListener("click", (e) => {
-        if (!memoModalOpen) return;
-        if (memoJustOpened) return;
-        if (memoClosingNow) return;
-
-        if (memoPopupEl && memoPopupEl.contains(e.target)) return;
-
-        requestCloseMemoModal(e);
+    closeBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        closeMemoModal();
     });
 
     memoPopupEl.querySelector("#memo-add-title").addEventListener("click", (e) => {
@@ -197,7 +152,7 @@ jQuery(async () => {
         if (!memoModalOpen) return;
         if (e.key === "Escape") {
             e.preventDefault();
-            requestCloseMemoModal(e);
+            closeMemoModal();
         }
     });
 
@@ -240,10 +195,9 @@ jQuery(async () => {
     }
 
     function openMemoModal() {
-        if (memoModalOpen || memoJustClosed || memoClosingNow) return;
+        if (memoModalOpen) return;
 
         memoModalOpen = true;
-        memoJustOpened = true;
 
         resetOpenState();
         renderMemoGroups();
@@ -262,25 +216,16 @@ jQuery(async () => {
             autoResizeAllTextareas(memoPopupEl);
             memoPosPopup();
         }, 100);
-
-        setTimeout(() => {
-            memoJustOpened = false;
-        }, 300);
     }
 
     function closeMemoModal() {
         if (!memoModalOpen) return;
 
         memoModalOpen = false;
-        memoJustClosed = true;
 
         memoBgEl.classList.remove("memo-show");
         memoPopupEl.classList.remove("memo-show");
         memoPopupEl.style.display = "none";
-
-        setTimeout(() => {
-            memoJustClosed = false;
-        }, 500);
     }
 
     // ─── 메모 렌더링 ───
@@ -560,8 +505,6 @@ jQuery(async () => {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation?.();
-
-        if (memoJustClosed || memoClosingNow) return;
 
         $("#extensionsMenu").hide();
         openMemoModal();
